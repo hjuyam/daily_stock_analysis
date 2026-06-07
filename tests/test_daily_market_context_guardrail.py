@@ -252,3 +252,23 @@ def test_conservative_market_context_does_not_soften_buy_when_negated_explicitly
     assert adjustments == []
     assert result.decision_type == "buy"
     assert result.operation_advice == "No buy now; avoid adding."
+
+
+def test_conservative_market_context_does_not_soften_do_not_buy_in_english() -> None:
+    result = _result()
+    result.decision_type = "buy"
+    result.operation_advice = "Do not buy now; sell into strength."
+
+    adjustments = apply_daily_market_context_guardrail(
+        result,
+        daily_market_context={
+            "region": "us",
+            "trade_date": "2026-06-06",
+            "summary": "Market cooling and elevated risk. Cautious on new positions.",
+        },
+        report_language="en",
+    )
+
+    assert adjustments == []
+    assert result.decision_type == "buy"
+    assert result.operation_advice == "Do not buy now; sell into strength."

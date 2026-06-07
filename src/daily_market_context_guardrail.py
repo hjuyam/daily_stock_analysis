@@ -26,8 +26,8 @@ _AGGRESSIVE_BUY_MARKERS_ZH = (
 )
 _AGGRESSIVE_BUY_MARKERS_EN = ("buy now", "strong buy", "aggressive buy", "chase", "add aggressively")
 _NEGATION_HINTS_ZH = ("暂不", "不建议", "不应", "不宜", "不能", "无法", "不允许", "禁止", "避免", "不要", "别", "先不")
-_NEGATION_HINTS_EN = (" not ", " do not ", "don't", "no ", "never", "avoid")
-_NEGATION_LOOKBACK = 6
+_NEGATION_HINTS_EN = (" not ", "do not", "don't", "no ", "never", "avoid")
+_NEGATION_LOOKBACK = 16
 _GUARDRAIL_SENTIMENT_SCORE = 52
 
 

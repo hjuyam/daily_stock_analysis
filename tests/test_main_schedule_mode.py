@@ -806,7 +806,18 @@ class MainScheduleModeTestCase(unittest.TestCase):
 
         self.assertTrue(pipeline_kwargs["daily_market_context_allow_generate"])
         self.assertEqual(events, ["pipeline", "stock-run", "market-review"])
-        prime_context.assert_has_calls(
+        query_scoped_read = unittest.mock.call(
+            config,
+            pipeline=pipeline,
+            region="cn",
+            no_market_review=False,
+            allow_generate=False,
+            target_date=target_date,
+            return_full_report=True,
+            require_current_query_match=True,
+        )
+        self.assertEqual(
+            prime_context.call_args_list,
             [
                 unittest.mock.call(
                     config,
@@ -817,6 +828,70 @@ class MainScheduleModeTestCase(unittest.TestCase):
                     target_date=target_date,
                     return_full_report=False,
                 ),
+                query_scoped_read,
+                query_scoped_read,
+            ],
+        )
+        run_with_lock_mock.assert_called_once()
+        run_market_review.assert_not_called()
+        refresh.assert_called_once_with(config)
+        pipeline.run.assert_called_once()
+
+    def test_run_full_analysis_reuses_runtime_market_context_after_stock_analysis(self) -> None:
+        args = self._make_args()
+        target_date = date(2026, 3, 26)
+        config = self._make_config(
+            trading_day_check_enabled=False,
+            market_review_enabled=True,
+            single_stock_notify=False,
+            merge_email_notification=False,
+            analysis_delay=0,
+            database_path=str(Path(self.temp_dir.name) / "stock_analysis.db"),
+        )
+        pipeline = MagicMock()
+        pipeline.run.return_value = []
+        pipeline.notifier = MagicMock(
+            is_available=MagicMock(return_value=True),
+            send=MagicMock(return_value=True),
+        )
+        pipeline_kwargs = {}
+
+        def build_pipeline(*args, **kwargs):
+            pipeline_kwargs.update(kwargs)
+            return pipeline
+
+        runtime_context = ("本轮运行时复盘摘要", "## 本轮运行时完整复盘")
+        with patch.object(main, "_refresh_stock_index_cache_for_analysis") as refresh, \
+             patch("main._compute_trading_day_filter", return_value=([], "cn", False)), \
+             patch("main._resolve_daily_market_context_target_date", return_value=target_date), \
+             patch("src.core.pipeline.StockAnalysisPipeline", side_effect=build_pipeline), \
+             patch(
+                 "main._prime_daily_market_context",
+                 side_effect=[("", ""), ("", ""), runtime_context],
+             ) as prime_context, \
+             patch("main._run_market_review_with_shared_lock") as run_with_lock, \
+             patch("src.core.market_review.run_market_review") as run_market_review:
+            main.run_full_analysis(config, args, [])
+
+        self.assertTrue(pipeline_kwargs["daily_market_context_allow_generate"])
+        run_with_lock.assert_not_called()
+        run_market_review.assert_not_called()
+        pipeline.notifier.send.assert_called_once()
+        self.assertIn("## 本轮运行时完整复盘", pipeline.notifier.send.call_args.args[0])
+        self.assertEqual(pipeline.notifier.send.call_args.kwargs["route_type"], "report")
+        query_scoped_read = unittest.mock.call(
+            config,
+            pipeline=pipeline,
+            region="cn",
+            no_market_review=False,
+            allow_generate=False,
+            target_date=target_date,
+            return_full_report=True,
+            require_current_query_match=True,
+        )
+        self.assertEqual(
+            prime_context.call_args_list,
+            [
                 unittest.mock.call(
                     config,
                     pipeline=pipeline,
@@ -824,13 +899,12 @@ class MainScheduleModeTestCase(unittest.TestCase):
                     no_market_review=False,
                     allow_generate=False,
                     target_date=target_date,
-                    return_full_report=True,
-                    require_current_query_match=True,
+                    return_full_report=False,
                 ),
-            ]
+                query_scoped_read,
+                query_scoped_read,
+            ],
         )
-        run_with_lock_mock.assert_called_once()
-        run_market_review.assert_not_called()
         refresh.assert_called_once_with(config)
         pipeline.run.assert_called_once()
 
@@ -951,6 +1025,16 @@ class MainScheduleModeTestCase(unittest.TestCase):
                     allow_generate=False,
                     target_date=target_date,
                     return_full_report=False,
+                ),
+                unittest.mock.call(
+                    config,
+                    pipeline=pipeline,
+                    region="cn",
+                    no_market_review=False,
+                    allow_generate=False,
+                    target_date=target_date,
+                    return_full_report=True,
+                    require_current_query_match=True,
                 ),
                 unittest.mock.call(
                     config,

@@ -663,6 +663,7 @@ def run_full_analysis(
         market_report = ""
         market_context_summary = ""
         market_context_full_report = ""
+        market_context_generated_during_stock = False
         pipeline = StockAnalysisPipeline(
             config=config,
             max_workers=args.workers,
@@ -707,6 +708,22 @@ def run_full_analysis(
             current_time=analysis_reference_time,
         )
 
+        if should_generate_market_context and not market_context_summary:
+            (
+                market_context_summary,
+                market_context_full_report,
+            ) = _prime_daily_market_context(
+                config,
+                pipeline=pipeline,
+                region=market_review_region,
+                no_market_review=args.no_market_review,
+                allow_generate=False,
+                target_date=daily_market_context_target_date,
+                return_full_report=True,
+                require_current_query_match=True,
+            )
+            market_context_generated_during_stock = bool(market_context_summary)
+
         # Issue #128: 分析间隔 - 在个股分析和大盘分析之间添加延迟
         analysis_delay = getattr(config, 'analysis_delay', 0)
 
@@ -722,15 +739,29 @@ def run_full_analysis(
             )
 
             can_skip_market_review = (
-                merge_notification
+                (merge_notification or market_context_generated_during_stock)
                 and can_reuse_market_context
                 and bool(market_context_full_report or market_context_summary)
             )
             if can_skip_market_review:
                 market_report = market_context_full_report or market_context_summary
                 logger.info(
-                    "复盘上下文可复用且开启合并推送，复用上下文内容参与合并通知。"
+                    "复盘上下文可复用，跳过重复大盘复盘并复用上下文内容。"
                 )
+                if (
+                    market_context_generated_during_stock
+                    and not merge_notification
+                    and not args.no_notify
+                    and pipeline.notifier.is_available()
+                ):
+                    if pipeline.notifier.send(
+                        f"# 📈 大盘复盘\n\n{market_report}",
+                        email_send_to_all=True,
+                        route_type="report",
+                    ):
+                        logger.info("复用本轮大盘上下文推送大盘复盘成功")
+                    else:
+                        logger.warning("复用本轮大盘上下文推送大盘复盘失败")
 
             review_result = None
             if not can_skip_market_review:
