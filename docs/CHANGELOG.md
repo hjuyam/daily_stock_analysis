@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - [修复] 修复 Web 首页个股栏在 stock-bar 摘要字段缺失或动作建议无法归类时隐藏情绪分与建议标识的问题。
 - [修复] Web 设置页左侧分类切换时仅在相关分类展示首次启动检查和 AlphaSift 辅助卡片，避免分类内容看起来没有切换。
+- [文档] 本次设置页修复为前端展示层分类可见性改造，不涉及 LLM/provider/Base URL/LiteLLM/默认模型/保存前清理或迁移语义。
 
 ## [3.24.1] - 2026-06-28
 

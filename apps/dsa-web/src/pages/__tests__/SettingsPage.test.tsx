@@ -1371,7 +1371,7 @@ describe('SettingsPage', () => {
     ];
 
     useSystemConfigMock.mockReturnValue(buildSystemConfigState({
-      activeCategory: 'ai_model',
+      activeCategory: 'base',
       itemsByCategory: {
         ...configState.itemsByCategory,
         data_source: dataSourceItems,
@@ -1380,7 +1380,18 @@ describe('SettingsPage', () => {
 
     const { rerender } = render(<SettingsPage />);
 
-    expect(await screen.findByRole('heading', { name: 'AI 模型接入' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '首次启动配置检查' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'AlphaSift 选股' })).not.toBeInTheDocument();
+
+    useSystemConfigMock.mockReturnValue(buildSystemConfigState({
+      activeCategory: 'ai_model',
+      itemsByCategory: {
+        ...configState.itemsByCategory,
+        data_source: dataSourceItems,
+      },
+    }));
+    rerender(<SettingsPage />);
+
     expect(screen.queryByRole('heading', { name: '首次启动配置检查' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'AlphaSift 选股' })).not.toBeInTheDocument();
 
