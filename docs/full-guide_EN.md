@@ -367,6 +367,8 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | Variable | Description | Default |
 |--------|------|--------|
 | `STOCK_LIST` | Watchlist codes (comma-separated) | - |
+| `ADMIN_AUTH_ENABLED` | Web login protection. Set to `true` before exposing the Web/API service publicly; the first visit initializes the admin password, and forgotten passwords can be reset with `python -m src.auth reset_password`. | `false` |
+| `DSA_ALLOW_INSECURE_PUBLIC_API` | Trusted LAN / temporary debugging only. Set to `true` to allow `WEBUI_HOST=0.0.0.0` / `::` while `ADMIN_AUTH_ENABLED=false`; by default this public unauthenticated mode is rejected at startup or request time. Public deployments should leave this unset and enable `ADMIN_AUTH_ENABLED=true`. | `false` |
 | `MAX_WORKERS` | Concurrent threads | `3` |
 | `MARKET_REVIEW_ENABLED` | Enable market review | `true` |
 | `DAILY_MARKET_CONTEXT_ENABLED` | Inject the daily market context into stock-analysis prompts and soften aggressive buy advice in high-risk/risk-off markets; enabled by default, and market review can still run when this is set to `false` | `true` |

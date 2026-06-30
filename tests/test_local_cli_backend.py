@@ -1607,6 +1607,25 @@ def test_diagnostics_redacts_webhook_urls_and_preserves_adjacent_normal_urls() -
     assert "https://example.com/public/docs?foo=bar" in redacted
 
 
+def test_diagnostics_redacts_short_sensitive_assignments() -> None:
+    text = (
+        "FEISHU_APP_SECRET=xxy12345abcdef "
+        "CUSTOM_API_KEY=abc123xyz789short "
+        "mixedToken: tok123 "
+        "normal_value=plain"
+    )
+
+    redacted = redact_diagnostic_text(text, limit=1000)
+
+    assert "xxy12345abcdef" not in redacted
+    assert "abc123xyz789short" not in redacted
+    assert "tok123" not in redacted
+    assert "FEISHU_APP_SECRET=<redacted>" in redacted
+    assert "CUSTOM_API_KEY=<redacted>" in redacted
+    assert "mixedToken: <redacted>" in redacted
+    assert "normal_value=plain" in redacted
+
+
 def test_effective_local_cli_concurrency_uses_minimum() -> None:
     assert effective_local_cli_concurrency(_config()) == 1
     assert effective_local_cli_concurrency(

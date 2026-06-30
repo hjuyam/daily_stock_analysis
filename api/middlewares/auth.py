@@ -13,6 +13,12 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth import COOKIE_NAME, is_auth_enabled, verify_session
+from src.webui_security import (
+    current_webui_bound_host,
+    is_insecure_public_api_allowed,
+    is_public_bind_host,
+    public_auth_guard_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +48,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable,
     ):
-        if not is_auth_enabled():
-            return await call_next(request)
-
         path = request.url.path
         if _path_exempt(path):
+            return await call_next(request)
+
+        if not is_auth_enabled():
+            bound_host = current_webui_bound_host()
+            if (
+                path.startswith("/api/v1/")
+                and is_public_bind_host(bound_host)
+                and not is_insecure_public_api_allowed()
+            ):
+                return JSONResponse(
+                    status_code=401,
+                    content={
+                        "error": "admin_auth_required",
+                        "message": public_auth_guard_message(bound_host),
+                    },
+                )
             return await call_next(request)
 
         if not path.startswith("/api/v1/"):

@@ -316,6 +316,60 @@ class AuthApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         call_next.assert_awaited_once()
 
+    def test_public_bind_rejects_api_when_auth_disabled_without_override(self) -> None:
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/analysis/analyze",
+            "headers": [],
+            "query_string": b"",
+            "scheme": "http",
+            "client": ("203.0.113.10", 1234),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+        request = Request(scope)
+        middleware = AuthMiddleware(app=MagicMock())
+        call_next = AsyncMock(return_value=Response(status_code=200))
+
+        with patch.dict(
+            os.environ,
+            {"DSA_WEBUI_BOUND_HOST": "0.0.0.0", "DSA_ALLOW_INSECURE_PUBLIC_API": ""},
+            clear=False,
+        ), patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+            response = asyncio.run(middleware.dispatch(request, call_next))
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn(b"admin_auth_required", response.body)
+        call_next.assert_not_awaited()
+
+    def test_public_bind_auth_disabled_allows_api_with_explicit_override(self) -> None:
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/analysis/analyze",
+            "headers": [],
+            "query_string": b"",
+            "scheme": "http",
+            "client": ("203.0.113.10", 1234),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+        request = Request(scope)
+        middleware = AuthMiddleware(app=MagicMock())
+        next_response = Response(status_code=200)
+        call_next = AsyncMock(return_value=next_response)
+
+        with patch.dict(
+            os.environ,
+            {"DSA_WEBUI_BOUND_HOST": "0.0.0.0", "DSA_ALLOW_INSECURE_PUBLIC_API": "true"},
+            clear=False,
+        ), patch("api.middlewares.auth.is_auth_enabled", return_value=False):
+            response = asyncio.run(middleware.dispatch(request, call_next))
+
+        self.assertEqual(response.status_code, 200)
+        call_next.assert_awaited_once()
+
     def test_auth_settings_enable_sets_initial_password_and_logs_in(self) -> None:
         self.env_path.write_text(
             "STOCK_LIST=600519\nGEMINI_API_KEY=test\nADMIN_AUTH_ENABLED=false\n",

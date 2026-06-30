@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] Web 设置页左侧分类切换时仅在相关分类展示首次启动检查和 AlphaSift 辅助卡片，避免分类内容看起来没有切换。
 - [文档] 本次设置页修复为前端展示层分类可见性改造，不涉及 LLM/provider/Base URL/LiteLLM/默认模型/保存前清理或迁移语义。
 - [修复] 修复 macOS 桌面端从 Finder/Dock 启动时后端 PATH 看不到 Homebrew Codex CLI 的问题，并明确 Codex CLI 主分析与 Agent LiteLLM 工具调用分流诊断。
+- [修复] Web/API 公网监听且 `ADMIN_AUTH_ENABLED=false` 时默认 fail closed，需启用管理员认证或显式设置 `DSA_ALLOW_INSECURE_PUBLIC_API=true`；同时修复 codex_cli diagnostics 中短敏感配置赋值未脱敏的问题。
 - [测试] 台股三大法人 fetcher（TwInstitutionalFetcher）新增真实端点 live-smoke 脚本（tests/tw_institutional_live_smoke.py，非 pytest）与 @pytest.mark.network 漂移检测测试：核对 TWSE T86 / TPEx 核心字段名仍在、解析结果与原始字段一致；仅在非阻断的 network-smoke 定时任务运行，阻断门（pytest -m "not network"）不收集，离线 fixtures 无法察觉的上游字段改名/端点变动由此告警。
 - [修复] 修复 Web 设置页定时任务“立即执行一次”后台线程未传 `stock_codes` 导致任务崩溃的问题。
 - [新功能] #1743 Phase 4 新增 `claude_code_cli` generation-only 本地 CLI backend，保留 LiteLLM 默认路径、Agent 工具调用边界、per-preset extractor、最小 env allowlist 与结构化错误。

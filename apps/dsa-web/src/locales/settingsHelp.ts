@@ -650,6 +650,14 @@ const settingsHelpZhCN: SettingsHelpMap = {
     impact: ['影响 WebUI 登录、设置页访问和管理操作保护。'],
     notes: ['启用前请确认部署环境可以持久化认证数据；手动改 .env 后需要重启进程或使用认证设置流程刷新状态。'],
   },
+  'settings.system.DSA_ALLOW_INSECURE_PUBLIC_API': {
+    title: '允许不安全公网 API',
+    summary: '仅用于可信内网或临时调试，显式允许公网监听且关闭管理员认证。',
+    usage: '公网部署应保持 false 或未设置，并启用 ADMIN_AUTH_ENABLED=true；只有确认网络边界可信时才手动设为 true。',
+    valueNotes: ['默认 false 会在公网监听且未开启认证时拒绝启动或拒绝管理 API 请求。', '该字段在通用配置页只读展示，避免从 WebUI 误开启不安全模式。'],
+    impact: ['影响下一次 WebUI/API 启动和运行中的 API 请求防护。'],
+    notes: ['开启后请通过防火墙、反向代理或内网边界限制访问；临时使用后应尽快恢复为 false 并重启服务。'],
+  },
   'settings.system.TRUST_X_FORWARDED_FOR': {
     title: '信任 X-Forwarded-For',
     summary: '在可信反向代理后使用 X-Forwarded-For 识别真实客户端 IP。',
@@ -1784,6 +1792,14 @@ const settingsHelpEnUS: SettingsHelpMap = {
     valueNotes: ['Recommended for public, shared LAN, or reverse-proxy deployments.', 'This field is shown read-only in the generic config page to avoid bypassing the auth settings flow.'],
     impact: ['Affects WebUI login, settings access, and admin operations.'],
     notes: ['Make sure auth data is persisted in the deployment environment. Manual .env edits require a process restart or the auth settings flow to refresh state.'],
+  },
+  'settings.system.DSA_ALLOW_INSECURE_PUBLIC_API': {
+    title: 'Allow Insecure Public API',
+    summary: 'Explicitly allows public Web/API binding while admin auth is disabled for trusted LAN or temporary debugging only.',
+    usage: 'Public deployments should leave this false or unset and enable ADMIN_AUTH_ENABLED=true. Set true manually only when the network boundary is trusted.',
+    valueNotes: ['The default false value rejects startup or management API requests when public binding is used without auth.', 'This field is read-only in the generic settings page to prevent accidental unsafe enablement from WebUI.'],
+    impact: ['Affects the next WebUI/API startup and request-time API safeguards.'],
+    notes: ['When enabled, restrict access with firewall, reverse proxy, or LAN controls. Restore false and restart the service after temporary use.'],
   },
   'settings.system.TRUST_X_FORWARDED_FOR': {
     title: 'Trust X-Forwarded-For',

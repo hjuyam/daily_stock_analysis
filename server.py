@@ -11,7 +11,7 @@ Daily Stock Analysis - FastAPI 后端服务入口
 4. 托管前端静态文件（生产模式）
 
 启动方式：
-    uvicorn server:app --reload --host 0.0.0.0 --port 8000
+    uvicorn server:app --reload --host 127.0.0.1 --port 8000
     
     或使用 main.py:
     python main.py --serve-only      # 仅启动 API 服务
@@ -45,10 +45,19 @@ __all__ = ['app']
 
 if __name__ == "__main__":
     import uvicorn
+    import os
+
+    from src.auth import is_auth_enabled
+    from src.webui_security import WEBUI_BOUND_HOST_ENV, enforce_public_webui_auth_guard
+
+    host = config.webui_host or "127.0.0.1"
+    port = int(config.webui_port or 8000)
+    os.environ[WEBUI_BOUND_HOST_ENV] = host
+    enforce_public_webui_auth_guard(host, auth_enabled=is_auth_enabled())
 
     uvicorn.run(
         "server:app",
-        host="0.0.0.0",
-        port=8000,
+        host=host,
+        port=port,
         reload=True,
     )

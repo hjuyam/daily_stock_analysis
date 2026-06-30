@@ -24,8 +24,20 @@ from src.llm.backend_registry import GENERATION_ONLY_BACKEND_IDS
 from src.services.system_config_service import ConfigConflictError, ConfigImportError, SystemConfigService
 
 
+_WEBUI_ENV_KEYS = (
+    "WEBUI_HOST",
+    "WEBUI_PORT",
+    "DSA_WEBUI_BOUND_HOST",
+    "DSA_ALLOW_INSECURE_PUBLIC_API",
+)
+
+
 class SystemConfigServiceTestCase(unittest.TestCase):
     def setUp(self) -> None:
+        self._original_webui_env = {
+            key: os.environ.get(key)
+            for key in _WEBUI_ENV_KEYS
+        }
         self.temp_dir = tempfile.TemporaryDirectory()
         self.env_path = Path(self.temp_dir.name) / ".env"
         self.env_path.write_text(
@@ -49,6 +61,11 @@ class SystemConfigServiceTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         Config.reset_instance()
         os.environ.pop("ENV_FILE", None)
+        for key, value in self._original_webui_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         self.temp_dir.cleanup()
 
     def _rewrite_env(self, *lines: str) -> None:

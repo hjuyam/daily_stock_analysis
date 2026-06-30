@@ -353,6 +353,7 @@ class TestSettingsHelpMetadata(unittest.TestCase):
         "EMAIL_RECEIVERS",
         "SCHEDULE_TIME",
         "ADMIN_AUTH_ENABLED",
+        "DSA_ALLOW_INSECURE_PUBLIC_API",
         # PR3 Phase 1: Agent + Event Alert
         "AGENT_MODE",
         "AGENT_MAX_STEPS",
@@ -499,6 +500,13 @@ class TestSettingsHelpMetadata(unittest.TestCase):
         field = get_field_definition("ADMIN_AUTH_ENABLED")
         self.assertFalse(field["is_editable"])
         self.assertIn("auth_settings_endpoint_required", field.get("warning_codes", []))
+
+    def test_insecure_public_api_override_is_read_only_in_generic_settings(self):
+        field = get_field_definition("DSA_ALLOW_INSECURE_PUBLIC_API")
+        self.assertEqual(field["category"], "system")
+        self.assertEqual(field["data_type"], "boolean")
+        self.assertFalse(field["is_editable"])
+        self.assertIn("trusted_temporary_only", field.get("warning_codes", []))
 
 
 class TestIssue1512SettingsFields(unittest.TestCase):

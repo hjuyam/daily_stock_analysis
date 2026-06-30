@@ -3139,7 +3139,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "WEBUI_HOST": {
         "title": "Web UI Host",
-        "description": "Host address for Web UI service binding.",
+        "description": "Host address for Web UI service binding. Public binds require admin auth unless explicitly allowed for trusted temporary use.",
         "category": "system",
         "data_type": "string",
         "ui_control": "text",
@@ -3280,6 +3280,36 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": ["public_webui_requires_auth", "auth_settings_endpoint_required"],
     },
+    "DSA_ALLOW_INSECURE_PUBLIC_API": {
+        "title": "Allow Insecure Public API",
+        "description": "Emergency override for public Web/API binds with admin auth disabled. Trusted temporary deployments only.",
+        "category": "system",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": False,
+        "default_value": "false",
+        "options": [],
+        "validation": {},
+        "display_order": 42,
+        "help_key": "settings.system.DSA_ALLOW_INSECURE_PUBLIC_API",
+        "examples": [
+            "DSA_ALLOW_INSECURE_PUBLIC_API=false",
+            "ADMIN_AUTH_ENABLED=true",
+        ],
+        "docs": [
+            {
+                "label": "云服务器访问 WebUI",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+            },
+            {
+                "label": "完整指南：其他配置",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#其他配置",
+            },
+        ],
+        "warning_codes": ["trusted_temporary_only", "restart_required"],
+    },
     "TRUST_X_FORWARDED_FOR": {
         "title": "Trust X-Forwarded-For",
         "description": "Use X-Forwarded-For as the client IP behind one trusted reverse proxy.",
@@ -3292,7 +3322,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "default_value": "false",
         "options": [],
         "validation": {},
-        "display_order": 42,
+        "display_order": 43,
         "help_key": "settings.system.TRUST_X_FORWARDED_FOR",
         "examples": [
             "TRUST_X_FORWARDED_FOR=false",

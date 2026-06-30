@@ -69,11 +69,16 @@ from src.webui_frontend import prepare_webui_frontend_assets
 from src.config import get_config, Config
 from src.logging_config import setup_logging
 from src.services.stock_code_utils import resolve_index_stock_code_for_analysis
+from src.webui_security import (
+    WEBUI_BOUND_HOST_ENV,
+    enforce_public_webui_auth_guard,
+    is_insecure_public_api_allowed,
+    is_public_bind_host,
+)
 
 
 logger = logging.getLogger(__name__)
 _RUNTIME_ENV_FILE_KEYS = set()
-_PUBLIC_BIND_HOSTS = frozenset({"0.0.0.0", "::", "[::]", "*"})
 
 
 def _get_active_env_path() -> Path:
@@ -83,24 +88,29 @@ def _get_active_env_path() -> Path:
     return Path(__file__).resolve().parent / ".env"
 
 
-def _is_public_bind_host(host: str) -> bool:
-    return (host or "").strip().lower() in _PUBLIC_BIND_HOSTS
-
-
 def _warn_if_public_webui_without_auth(host: str) -> None:
-    if not _is_public_bind_host(host):
+    if not is_public_bind_host(host):
         return
 
     from src.auth import is_auth_enabled
 
     if is_auth_enabled():
         return
+    if not is_insecure_public_api_allowed():
+        return
     logger.warning(
         "WEBUI_HOST=%s binds the Web UI to a public interface while "
-        "ADMIN_AUTH_ENABLED=false. Keep this service behind a trusted network "
-        "boundary or enable admin authentication before exposing it.",
+        "ADMIN_AUTH_ENABLED=false. %s=true explicitly allows this insecure mode; "
+        "keep this service behind a trusted network boundary.",
         host,
+        "DSA_ALLOW_INSECURE_PUBLIC_API",
     )
+
+
+def _enforce_public_webui_auth_guard(host: str) -> None:
+    from src.auth import is_auth_enabled
+
+    enforce_public_webui_auth_guard(host, auth_enabled=is_auth_enabled())
 
 
 def _read_active_env_values() -> Optional[Dict[str, str]]:
@@ -380,8 +390,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--host',
         type=str,
-        default='0.0.0.0',
-        help='FastAPI 服务监听地址（默认 0.0.0.0）'
+        default=None,
+        help='FastAPI 服务监听地址（默认读取 WEBUI_HOST；未配置时为 127.0.0.1）'
     )
 
     parser.add_argument(
@@ -1301,12 +1311,14 @@ def main() -> int:
     # === 启动 Web 服务 (如果启用) ===
     start_serve = (args.serve or args.serve_only) and os.getenv("GITHUB_ACTIONS") != "true"
 
-    # 兼容旧版 WEBUI_HOST/WEBUI_PORT：如果用户未通过 --host/--port 指定，则使用旧变量
+    # 兼容 WEBUI_HOST/WEBUI_PORT：如果用户未通过 --host/--port 指定，则使用配置值。
     if start_serve:
-        if args.host == '0.0.0.0' and os.getenv('WEBUI_HOST'):
-            args.host = os.getenv('WEBUI_HOST')
+        if not args.host:
+            args.host = os.getenv('WEBUI_HOST') or '127.0.0.1'
         if args.port == 8000 and os.getenv('WEBUI_PORT'):
             args.port = int(os.getenv('WEBUI_PORT'))
+        os.environ[WEBUI_BOUND_HOST_ENV] = args.host
+        _enforce_public_webui_auth_guard(args.host)
         _warn_if_public_webui_without_auth(args.host)
 
     bot_clients_started = False

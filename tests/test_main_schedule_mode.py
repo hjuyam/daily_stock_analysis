@@ -19,6 +19,7 @@ ensure_litellm_stub()
 _ENV_BEFORE_MAIN_IMPORT = dict(os.environ)
 import main
 from src.config import Config
+from src.webui_security import WEBUI_BOUND_HOST_ENV
 
 _MAIN_IMPORT_ENV_ADDITIONS = frozenset(set(os.environ) - set(_ENV_BEFORE_MAIN_IMPORT))
 _MAIN_IMPORT_ENV_OVERRIDES = {
@@ -78,6 +79,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
         os.chdir(self.original_cwd)
         Config.reset_instance()
         self.env_patch.stop()
+        os.environ.pop(WEBUI_BOUND_HOST_ENV, None)
         for key in _MAIN_IMPORT_ENV_ADDITIONS:
             os.environ.pop(key, None)
         for key, value in _MAIN_IMPORT_ENV_OVERRIDES.items():
@@ -187,9 +189,17 @@ class MainScheduleModeTestCase(unittest.TestCase):
         self.assertEqual(effective_region, "jp,kr")
         self.assertFalse(should_skip_all)
 
-    def test_public_webui_bind_warns_when_auth_is_disabled(self) -> None:
-        with patch("src.auth.is_auth_enabled", return_value=False), \
+    def test_public_webui_bind_fails_when_auth_is_disabled_without_override(self) -> None:
+        with patch.dict(os.environ, {"DSA_ALLOW_INSECURE_PUBLIC_API": ""}, clear=False), \
+             patch("src.auth.is_auth_enabled", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "ADMIN_AUTH_ENABLED=false"):
+                main._enforce_public_webui_auth_guard("0.0.0.0")
+
+    def test_public_webui_bind_warns_when_insecure_override_is_enabled(self) -> None:
+        with patch.dict(os.environ, {"DSA_ALLOW_INSECURE_PUBLIC_API": "true"}, clear=False), \
+             patch("src.auth.is_auth_enabled", return_value=False), \
              patch("main.logger.warning") as warning_log:
+            main._enforce_public_webui_auth_guard("0.0.0.0")
             main._warn_if_public_webui_without_auth("0.0.0.0")
 
         warning_log.assert_called_once()
@@ -199,6 +209,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
     def test_loopback_webui_bind_does_not_warn_when_auth_is_disabled(self) -> None:
         with patch("src.auth.is_auth_enabled", return_value=False), \
              patch("main.logger.warning") as warning_log:
+            main._enforce_public_webui_auth_guard("127.0.0.1")
             main._warn_if_public_webui_without_auth("127.0.0.1")
 
         warning_log.assert_not_called()
