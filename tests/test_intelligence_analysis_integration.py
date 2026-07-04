@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 import tempfile
 import unittest
@@ -88,6 +89,24 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
 
         refresh.assert_called_once()
         self.assertIsNotNone(context)
+
+    def test_pipeline_refreshes_auto_sources_with_pipeline_config(self) -> None:
+        self.config.news_intel_auto_fetch_enabled = True
+        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline.config = replace(self.config, news_intel_auto_fetch_enabled=False)
+
+        with patch("src.core.pipeline.IntelligenceService") as service_cls:
+            service = service_cls.return_value
+            service.refresh_auto_sources.return_value = {"ok": True}
+            service.list_items.return_value = {"items": [], "total": 0}
+            context = pipeline._load_persisted_intelligence_context(
+                code="600519",
+                stock_name="贵州茅台",
+                market="cn",
+            )
+
+        service_cls.assert_called_once_with(config=pipeline.config)
+        self.assertIsNone(context)
 
     def test_pipeline_loads_symbol_intelligence_with_exchange_alias_scope(self) -> None:
         repo = IntelligenceRepository()
@@ -198,6 +217,19 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
 
         refresh.assert_called_once()
         self.assertTrue(any(item.get("title") == "Policy support lifts market sentiment" for item in merged))
+
+    def test_market_review_refreshes_auto_sources_with_analyzer_config(self) -> None:
+        self.config.news_intel_auto_fetch_enabled = True
+        analyzer = MarketAnalyzer(config=replace(self.config, news_intel_auto_fetch_enabled=False), region="cn")
+
+        with patch("src.market_analyzer.IntelligenceService") as service_cls:
+            service = service_cls.return_value
+            service.refresh_auto_sources.return_value = {"ok": True}
+            service.list_items.return_value = {"items": [], "total": 0}
+            merged = analyzer._merge_persisted_market_intelligence([])
+
+        service_cls.assert_called_once_with(config=analyzer.config)
+        self.assertEqual(merged, [])
 
     def test_market_review_local_intelligence_kept_in_top_payload_when_search_news_filled(self) -> None:
         analyzer = MarketAnalyzer(config=self.config, region="cn")

@@ -20,7 +20,7 @@ from xml.etree import ElementTree as ET
 import requests
 from sqlalchemy.exc import IntegrityError
 
-from src.config import get_config
+from src.config import Config, get_config
 from src.repositories.intelligence_repo import IntelligenceRepository
 from src.storage import IntelligenceSource, INTELLIGENCE_ITEM_NULL_SCOPE_VALUE
 from src.services.run_diagnostics import sanitize_diagnostic_text
@@ -128,9 +128,13 @@ class IntelligenceService:
     _auto_fetch_last_run_at: Optional[datetime] = None
     _auto_fetch_last_result: Optional[Dict[str, Any]] = None
 
-    def __init__(self, repository: Optional[IntelligenceRepository] = None):
+    def __init__(
+        self,
+        repository: Optional[IntelligenceRepository] = None,
+        config: Optional[Config] = None,
+    ):
         self.repo = repository or IntelligenceRepository()
-        self.config = get_config()
+        self.config = config or get_config()
 
     @classmethod
     def reset_auto_fetch_state(cls) -> None:

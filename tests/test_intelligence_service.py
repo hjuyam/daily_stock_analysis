@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 import json
 import socket
@@ -339,6 +340,18 @@ class IntelligenceServiceTestCase(unittest.TestCase):
 
         with patch("src.services.intelligence_service.requests.get") as mock_get:
             result = self.service.refresh_auto_sources(force=True)
+
+        self.assertTrue(result["skipped"])
+        self.assertEqual(result["reason"], "disabled")
+        mock_get.assert_not_called()
+
+    def test_init_accepts_explicit_config(self) -> None:
+        self.service.config.news_intel_auto_fetch_enabled = True
+        explicit_config = replace(self.service.config, news_intel_auto_fetch_enabled=False)
+
+        with patch("src.services.intelligence_service.requests.get") as mock_get:
+            service = IntelligenceService(config=explicit_config)
+            result = service.refresh_auto_sources(force=True)
 
         self.assertTrue(result["skipped"])
         self.assertEqual(result["reason"], "disabled")
