@@ -462,6 +462,8 @@ daily_stock_analysis/
 | `SCHEDULE_TIMES` | 多个定时执行时间，逗号分隔；为空时使用 `SCHEDULE_TIME` | 空 |
 | `LOG_DIR` | 日志目录 | `./logs` |
 | `SAVE_CONTEXT_SNAPSHOT` | 保存分析历史 `context_snapshot`；设为 `false` 时新历史不保存 enhanced_context、market_phase_summary、AnalysisContextPack overview 或诊断快照，但不关闭当次 Prompt 低敏摘要 | `true` |
+| `BOLL_ENABLED` | 启用布林带（Bollinger Bands）技术指标分析。开启后会在 LLM 分析 prompt 中加入各周期的上轨/中轨/下轨及带宽百分比数据 | `false` |
+| `BOLL_PERIODS` | 逗号分隔的布林带周期列表，如 `5,10,20` 同时展示 5/10/20 三个周期。仅当 `BOLL_ENABLED=true` 时生效。每个周期使用 2 倍标准差 | `5,10,20` |
 
 ---
 

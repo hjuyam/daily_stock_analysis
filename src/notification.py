@@ -1861,6 +1861,16 @@ class NotificationService(
         if info_added:
             lines.append("")
 
+        # ========== 布林带分析（BOLL）==========
+        boll_text = getattr(result, 'boll_analysis', None) or dashboard.get('boll_analysis', '')
+        if boll_text:
+            lines.extend([
+                f"### 📉 {labels.get('boll_heading', '布林带分析')}",
+                "",
+                boll_text,
+                "",
+            ])
+
         # 狙击点位
         sniper = battle.get('sniper_points', {}) if battle else {}
         if sniper:

@@ -1193,6 +1193,20 @@ const settingsHelpZhCN: SettingsHelpMap = {
     impact: ['影响分析报告中大盘概览部分的内容和视觉呈现。'],
     notes: ['大盘分析依赖对应市场的指数数据源可用性。'],
   },
+  'settings.system.BOLL_ENABLED': {
+    title: '布林带分析',
+    summary: '启用布林带（Bollinger Bands）技术指标分析。开启后会在 LLM 分析 prompt 中加入各周期的上轨/中轨/下轨及带宽百分比数据。',
+    usage: '默认关闭以节省 token。设为 true 后生效，配合 BOLL_PERIODS 控制展示哪些周期。',
+    impact: ['启用后每条分析增加约 45 token 开销（按三周期计算）。'],
+    notes: ['各个周期的 band 全部计算后再传给 LLM，由 LLM 综合分析价格在通道内的位置。'],
+  },
+  'settings.system.BOLL_PERIODS': {
+    title: '布林带周期',
+    summary: '控制计算和展示哪些周期的布林带。仅当 BOLL_ENABLED=true 时生效。',
+    usage: '用逗号分隔多个周期，例如 "5,10,20" 会同时展示 5/10/20 三个周期的布林带。',
+    examples: ['5,10,20', '10', '5,10'],
+    impact: ['周期数量越多，prompt token 开销越大。'],
+  },
 };
 
 const settingsHelpEnUS: SettingsHelpMap = {
@@ -2327,6 +2341,20 @@ const settingsHelpEnUS: SettingsHelpMap = {
     ],
     impact: ['Affects the market overview section in analysis reports.'],
     notes: ['Market review depends on the availability of index data sources for the selected markets.'],
+  },
+  'settings.system.BOLL_ENABLED': {
+    title: 'Bollinger Bands Analysis',
+    summary: 'Enable Bollinger Bands (BOLL) technical indicator. When enabled, upper/middle/lower bands and bandwidth are added to the LLM analysis prompt.',
+    usage: 'Disabled by default to save tokens. Set to true to enable. Use with BOLL_PERIODS to control which periods are shown.',
+    impact: ['Each analysis adds ~45 extra tokens when enabled (3 periods).'],
+    notes: ['All configured periods are computed and passed to the LLM, which decides how to incorporate the data.'],
+  },
+  'settings.system.BOLL_PERIODS': {
+    title: 'Bollinger Bands Periods',
+    summary: 'Controls which Bollinger Bands periods are computed and displayed. Only active when BOLL_ENABLED=true.',
+    usage: 'Comma-separated list of periods, e.g. "5,10,20" shows all three.',
+    examples: ['5,10,20', '10', '5,10'],
+    impact: ['More periods = more token overhead in the prompt.'],
   },
 };
 

@@ -561,6 +561,7 @@ class BaseFetcher(ABC):
         计算指标：
         - MA5, MA10, MA20: 移动平均线
         - Volume_Ratio: 量比（今日成交量 / 5日平均成交量）
+        - BOLL(5/10/20): 布林带（上轨/中轨/下轨）及带宽百分比
         """
         df = df.copy()
         
@@ -568,6 +569,15 @@ class BaseFetcher(ABC):
         df['ma5'] = df['close'].rolling(window=5, min_periods=1).mean()
         df['ma10'] = df['close'].rolling(window=10, min_periods=1).mean()
         df['ma20'] = df['close'].rolling(window=20, min_periods=1).mean()
+        
+        # 布林带（Bollinger Bands）：中轨 = MA，上轨/下轨 = MA ± 2*std
+        for p in [5, 10, 20]:
+            ma = df[f'ma{p}']
+            std = df['close'].rolling(window=p, min_periods=1).std()
+            df[f'boll_{p}u'] = ma + 2 * std
+            df[f'boll_{p}m'] = ma
+            df[f'boll_{p}l'] = ma - 2 * std
+            df[f'boll_{p}_width'] = ((df[f'boll_{p}u'] - df[f'boll_{p}l']) / df[f'boll_{p}m']) * 100
         
         # 量比：当日成交量 / 5日平均成交量
         # 注意：此处的 volume_ratio 是“日线成交量 / 前5日均量(shift 1)”的相对倍数，
@@ -578,7 +588,10 @@ class BaseFetcher(ABC):
         df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
         
         # 保留2位小数
-        for col in ['ma5', 'ma10', 'ma20', 'volume_ratio']:
+        rounding_cols = ['ma5', 'ma10', 'ma20', 'volume_ratio']
+        for p in [5, 10, 20]:
+            rounding_cols += [f'boll_{p}u', f'boll_{p}m', f'boll_{p}l', f'boll_{p}_width']
+        for col in rounding_cols:
             if col in df.columns:
                 df[col] = df[col].round(2)
         

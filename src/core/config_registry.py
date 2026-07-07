@@ -3498,6 +3498,49 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": [],
     },
+    "BOLL_ENABLED": {
+        "title": "布林带分析",
+        "description": "启用布林带（Bollinger Bands）技术指标。开启后会在 LLM 分析 prompt 中加入各周期的上轨/中轨/下轨及带宽百分比数据。默认关闭以节省 token。",
+        "category": "system",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "false",
+        "options": [],
+        "validation": {"enum": ["true", "false"]},
+        "display_order": 60,
+        "help_key": "settings.system.BOLL_ENABLED",
+        "examples": [
+            "BOLL_ENABLED=true",
+            "BOLL_ENABLED=false",
+        ],
+        "docs": [],
+        "warning_codes": [],
+    },
+    "BOLL_PERIODS": {
+        "title": "布林带周期",
+        "description": "控制计算和展示哪些周期的布林带。用逗号分隔多个周期，例如 \"5,10,20\" 会同时展示 5/10/20 三个周期的布林带。仅当 BOLL_ENABLED=true 时生效。每个周期使用标准差倍数为 2。",
+        "category": "system",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "5,10,20",
+        "options": [],
+        "validation": {"pattern": r"^\d+(,\d+)*\s*$", "min_length": 1},
+        "display_order": 61,
+        "help_key": "settings.system.BOLL_PERIODS",
+        "examples": [
+            "BOLL_PERIODS=5,10,20",
+            "BOLL_PERIODS=10",
+            "BOLL_PERIODS=5,10",
+        ],
+        "docs": [],
+        "warning_codes": [],
+    },
     "ANALYSIS_DELAY": {
         "title": "Analysis Delay",
         "description": "Delay in seconds between individual stock analyses (for API rate limiting).",
@@ -4961,7 +5004,7 @@ def _infer_category(key: str) -> str:
         "ASTRBOT",
     )) or "WEBHOOK" in key:
         return "notification"
-    if key.startswith(("LOG_", "SCHEDULE_", "WEBUI_", "HTTP_", "HTTPS_", "MAX_", "DEBUG", "MARKET_REVIEW_", "TRADING_DAY_", "ANALYSIS_DELAY")):
+    if key.startswith(("LOG_", "SCHEDULE_", "WEBUI_", "HTTP_", "HTTPS_", "MAX_", "DEBUG", "MARKET_REVIEW_", "TRADING_DAY_", "ANALYSIS_DELAY", "BOLL_")):
         return "system"
     return "uncategorized"
 

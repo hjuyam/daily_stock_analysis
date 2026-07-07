@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复桌面端 `WEBUI_HOST=*` / `WEBUI_HOST=[::]` 会被原样传给端口探测和后端启动导致无法监听的问题，启动前分别规范化为 `0.0.0.0` / `::`。
 - [改进] `STOCK_LIST` 自选股解析支持中文逗号、顿号、分号、空格和换行等常见粘贴分隔符，运行时、定时热刷新、CLI `--stocks`、Web 设置保存和自选 API 统一识别，并在写回时规范为英文逗号。
 - [改进] 新增 `NEWS_INTEL_AUTO_FETCH_ENABLED` 单开关，开启后个股分析、Agent 分析和大盘复盘会 fail-open 自动初始化并刷新 RSS/Atom/NewsNow 本地资讯池。
+- [新功能] 新增布林带（Bollinger Bands）技术指标分析，支持 BOLL(5/10/20) 三周期上轨/中轨/下轨/带宽计算，通过 `BOLL_ENABLED=true` 和 `BOLL_PERIODS=5,10,20` 配置启用（默认关闭）。
+- [新功能] 个股分析报告新增「布林带分析」章节，LLM 基于 BOLL 数据输出独立分析，覆盖 Web UI 报告详情页和通知推送。
+- [文档] 补充 `.env.example`、`docs/full-guide.md`（中英文）的 BOLL 配置说明。
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->

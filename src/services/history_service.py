@@ -1076,6 +1076,16 @@ class HistoryService:
                         "",
                     ])
 
+        # ========== 布林带分析（BOLL）==========
+        boll_text = getattr(result, 'boll_analysis', None) or dashboard.get('boll_analysis', '')
+        if boll_text:
+            report_lines.extend([
+                f"### 📉 {labels.get('boll_heading', '布林带分析')}",
+                "",
+                boll_text,
+                "",
+            ])
+
         # ========== 作战计划 ==========
         battle = dashboard.get('battle_plan', {}) if dashboard else {}
         if battle:

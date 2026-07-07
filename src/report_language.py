@@ -356,6 +356,7 @@ _REPORT_LABELS: Dict[str, Dict[str, str]] = {
         "market_conditions_label": "市场环境",
         "strongest_bullish_signal_label": "最强看多信号",
         "strongest_bearish_signal_label": "最强看空信号",
+        "boll_heading": "布林带分析",
     },
     "en": {
         "dashboard_title": "Decision Dashboard",
@@ -480,6 +481,7 @@ _REPORT_LABELS: Dict[str, Dict[str, str]] = {
         "market_conditions_label": "Market Conditions",
         "strongest_bullish_signal_label": "Strongest Bullish Signal",
         "strongest_bearish_signal_label": "Strongest Bearish Signal",
+        "boll_heading": "Bollinger Bands Analysis",
     },
     "ko": {
         "dashboard_title": "결정 대시보드",
@@ -604,6 +606,7 @@ _REPORT_LABELS: Dict[str, Dict[str, str]] = {
         "market_conditions_label": "시장 환경",
         "strongest_bullish_signal_label": "최강 상승 신호",
         "strongest_bearish_signal_label": "최강 하락 신호",
+        "boll_heading": "볼린저 밴드 분석",
     },
 }
 

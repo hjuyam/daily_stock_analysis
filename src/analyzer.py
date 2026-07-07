@@ -1707,6 +1707,9 @@ class AnalysisResult:
     market_sentiment: str = ""  # 市场情绪分析
     hot_topics: str = ""  # 相关热点话题
 
+    # ========== 布林带分析 (BOLL) ==========
+    boll_analysis: str = ""  # 布林带分析（BOLL 数据解读）
+
     # ========== 综合分析 ==========
     analysis_summary: str = ""  # 综合分析摘要
     key_points: str = ""  # 核心看点（3-5个要点）
@@ -1761,6 +1764,7 @@ class AnalysisResult:
             'news_summary': self.news_summary,
             'market_sentiment': self.market_sentiment,
             'hot_topics': self.hot_topics,
+            'boll_analysis': self.boll_analysis,
             'analysis_summary': self.analysis_summary,
             'key_points': self.key_points,
             'risk_warning': self.risk_warning,
@@ -2011,6 +2015,8 @@ class GeminiAnalyzer:
     "market_sentiment": "市场情绪",
     "hot_topics": "相关热点",
 
+    "boll_analysis": "布林带分析（基于BOLL数据，分析价格在布林带中的位置、带宽变化、突破/回踩信号等，50-200字）",
+
     "search_performed": true/false,
     "data_sources": "数据来源说明"
 }
@@ -2198,6 +2204,8 @@ class GeminiAnalyzer:
     "news_summary": "新闻摘要",
     "market_sentiment": "市场情绪",
     "hot_topics": "相关热点",
+
+    "boll_analysis": "布林带分析（基于BOLL数据，分析价格在布林带中的位置、带宽变化、突破/回踩信号等，50-200字）",
 
     "search_performed": true/false,
     "data_sources": "数据来源说明"
@@ -3765,6 +3773,34 @@ class GeminiAnalyzer:
 | 均线形态 | {context.get('ma_status', unknown_text)} | 多头/空头/缠绕 |
 """
         
+        # 布林带（BOLL）技术指标
+        prompt_config = self._get_runtime_config()
+        if getattr(prompt_config, 'boll_enabled', False):
+            boll_periods_str = getattr(prompt_config, 'boll_periods', '5,10,20')
+            boll_periods = [p.strip() for p in boll_periods_str.split(',') if p.strip()]
+            boll_rows = []
+            for p in boll_periods:
+                upper = today.get(f'boll_{p}u', 'N/A')
+                middle = today.get(f'boll_{p}m', 'N/A')
+                lower = today.get(f'boll_{p}l', 'N/A')
+                width = today.get(f'boll_{p}_width', 'N/A')
+                if width != 'N/A':
+                    width = f'{width}%'
+                boll_rows.append(
+                    f"| BOLL({p}) 上轨 | {upper} | / | 中轨 | {middle} | / | 下轨 | {lower} | / | 带宽 | {width} |"
+                )
+            if boll_rows:
+                boll_table = '\n'.join(boll_rows)
+                prompt += f"""
+
+### 布林带（BOLL）
+| 指标 | 数值 | 分隔 | 指标 | 数值 | 分隔 | 指标 | 数值 | 分隔 | 指标 | 数值 |
+|------|------|------|------|------|------|------|------|------|------|------|
+{boll_table}
+
+> 请结合价格在布林带内的位置进行分析。
+"""
+        
         # 添加实时行情数据（量比、换手率等）
         if 'realtime' in context:
             rt = context['realtime']
@@ -4564,6 +4600,8 @@ class GeminiAnalyzer:
                 news_summary=data.get('news_summary', ''),
                 market_sentiment=data.get('market_sentiment', ''),
                 hot_topics=data.get('hot_topics', ''),
+                # 布林带分析
+                boll_analysis=data.get('boll_analysis', ''),
                 # 综合
                 analysis_summary=data.get('analysis_summary', _localized_text(
                     report_language, en='Analysis completed', zh='分析完成', ko='분석 완료')),

@@ -129,6 +129,20 @@ class StockDaily(Base):
     ma10 = Column(Float)
     ma20 = Column(Float)
     volume_ratio = Column(Float)  # 量比
+
+    # 布林带（Bollinger Bands）
+    boll_5u = Column(Float)  # BOLL(5) 上轨
+    boll_5m = Column(Float)  # BOLL(5) 中轨
+    boll_5l = Column(Float)  # BOLL(5) 下轨
+    boll_5_width = Column(Float)  # BOLL(5) 带宽%
+    boll_10u = Column(Float)  # BOLL(10) 上轨
+    boll_10m = Column(Float)  # BOLL(10) 中轨
+    boll_10l = Column(Float)  # BOLL(10) 下轨
+    boll_10_width = Column(Float)  # BOLL(10) 带宽%
+    boll_20u = Column(Float)  # BOLL(20) 上轨
+    boll_20m = Column(Float)  # BOLL(20) 中轨
+    boll_20l = Column(Float)  # BOLL(20) 下轨
+    boll_20_width = Column(Float)  # BOLL(20) 带宽%
     
     # 数据来源
     data_source = Column(String(50))  # 记录数据来源（如 AkshareFetcher）
@@ -162,6 +176,18 @@ class StockDaily(Base):
             'ma10': self.ma10,
             'ma20': self.ma20,
             'volume_ratio': self.volume_ratio,
+            'boll_5u': self.boll_5u,
+            'boll_5m': self.boll_5m,
+            'boll_5l': self.boll_5l,
+            'boll_5_width': self.boll_5_width,
+            'boll_10u': self.boll_10u,
+            'boll_10m': self.boll_10m,
+            'boll_10l': self.boll_10l,
+            'boll_10_width': self.boll_10_width,
+            'boll_20u': self.boll_20u,
+            'boll_20m': self.boll_20m,
+            'boll_20l': self.boll_20l,
+            'boll_20_width': self.boll_20_width,
             'data_source': self.data_source,
         }
 
@@ -854,6 +880,22 @@ _LLM_USAGE_TELEMETRY_COLUMN_SQL: Dict[str, str] = {
     "approx_common_prefix_tokens": "INTEGER",
     "known_dynamic_marker_positions": "TEXT",
 }
+
+_BOLL_COLUMNS_SQL: Dict[str, str] = {
+    "boll_5u": "FLOAT",
+    "boll_5m": "FLOAT",
+    "boll_5l": "FLOAT",
+    "boll_5_width": "FLOAT",
+    "boll_10u": "FLOAT",
+    "boll_10m": "FLOAT",
+    "boll_10l": "FLOAT",
+    "boll_10_width": "FLOAT",
+    "boll_20u": "FLOAT",
+    "boll_20m": "FLOAT",
+    "boll_20l": "FLOAT",
+    "boll_20_width": "FLOAT",
+}
+
 _LLM_USAGE_INTEGER_TELEMETRY_COLUMNS = {
     column
     for column, column_type in _LLM_USAGE_TELEMETRY_COLUMN_SQL.items()
@@ -1184,6 +1226,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_intelligence_item_scope_values()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
+            self._ensure_stock_daily_boll_columns()
 
             self._initialized = True
             logger.info(f"数据库初始化完成: {db_url}")
@@ -1381,6 +1424,38 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                             time.sleep(delay)
                         continue
                     raise
+
+    
+    def _ensure_stock_daily_boll_columns(self) -> None:
+        """Add nullable Bollinger Bands columns to existing stock_daily SQLite tables."""
+        if not self._is_sqlite_engine:
+            return
+        try:
+            existing = {
+                column["name"]
+                for column in inspect(self._engine).get_columns(StockDaily.__tablename__)
+            }
+        except Exception as exc:
+            logger.warning(
+                "[BOLL] failed to inspect stock_daily columns; skipping backfill: %s",
+                exc,
+            )
+            return
+
+        for column, column_type in _BOLL_COLUMNS_SQL.items():
+            if column in existing:
+                continue
+            try:
+                with self._engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        f"ALTER TABLE {StockDaily.__tablename__} "
+                        f"ADD COLUMN {column} {column_type}"
+                    )
+                logger.info("[BOLL] added column %s to stock_daily", column)
+            except OperationalError as exc:
+                if self._is_sqlite_duplicate_column_error(exc, column):
+                    continue
+                raise
 
     def _ensure_intelligence_item_scope_values(self) -> None:
         """Backfill nullable intelligence item scopes so SQLite unique keys work."""
@@ -2406,6 +2481,19 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 'ma10': self._normalize_sql_value(row.get('ma10')),
                 'ma20': self._normalize_sql_value(row.get('ma20')),
                 'volume_ratio': self._normalize_sql_value(row.get('volume_ratio')),
+                # 布林带（Bollinger Bands）
+                'boll_5u': self._normalize_sql_value(row.get('boll_5u')),
+                'boll_5m': self._normalize_sql_value(row.get('boll_5m')),
+                'boll_5l': self._normalize_sql_value(row.get('boll_5l')),
+                'boll_5_width': self._normalize_sql_value(row.get('boll_5_width')),
+                'boll_10u': self._normalize_sql_value(row.get('boll_10u')),
+                'boll_10m': self._normalize_sql_value(row.get('boll_10m')),
+                'boll_10l': self._normalize_sql_value(row.get('boll_10l')),
+                'boll_10_width': self._normalize_sql_value(row.get('boll_10_width')),
+                'boll_20u': self._normalize_sql_value(row.get('boll_20u')),
+                'boll_20m': self._normalize_sql_value(row.get('boll_20m')),
+                'boll_20l': self._normalize_sql_value(row.get('boll_20l')),
+                'boll_20_width': self._normalize_sql_value(row.get('boll_20_width')),
                 'data_source': data_source,
                 'created_at': now,
                 'updated_at': now,

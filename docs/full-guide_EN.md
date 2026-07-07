@@ -381,6 +381,8 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `RUN_IMMEDIATELY` | Run once immediately for non-scheduler startup; also acts as the legacy fallback when `SCHEDULE_RUN_IMMEDIATELY` is unset | `true` |
 | `LOG_DIR` | Log directory | `./logs` |
 | `SAVE_CONTEXT_SNAPSHOT` | Persist analysis-history `context_snapshot`. When false, new history records do not save enhanced_context, market_phase_summary, AnalysisContextPack overview, or diagnostic snapshots, but current-run prompt summaries remain enabled | `true` |
+| `BOLL_ENABLED` | Enable Bollinger Bands (BOLL) technical indicator. Adds upper/middle/lower bands and bandwidth percentage for configurable periods to the LLM analysis prompt. Disabled by default to save tokens | `false` |
+| `BOLL_PERIODS` | Comma-separated list of Bollinger Bands periods (e.g. `5,10,20`). Only active when `BOLL_ENABLED=true`. Each period uses a standard deviation multiplier of 2 | `5,10,20` |
 
 > Behavior notes:
 > - When `TICKFLOW_API_KEY` is configured, TickFlow is instantiated as an optional A-share daily K-line data source and CN market-review enhancer. `TICKFLOW_PRIORITY` only affects the daily K-line/general provider fallback chain. Realtime quote priority is controlled separately by `REALTIME_SOURCE_PRIORITY`; TickFlow realtime quotes are used only when that list explicitly includes `tickflow`, and any source listed before `tickflow` is tried first.
