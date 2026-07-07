@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 新增布林带（Bollinger Bands）技术指标分析，支持 BOLL(5/10/20) 三周期上轨/中轨/下轨/带宽计算，通过 `BOLL_ENABLED=true` 和 `BOLL_PERIODS=5,10,20` 配置启用（默认关闭）。
 - [新功能] 个股分析报告新增「布林带分析」章节，LLM 基于 BOLL 数据输出独立分析，覆盖 Web UI 报告详情页和通知推送。
 - [文档] 补充 `.env.example`、`docs/full-guide.md`（中英文）的 BOLL 配置说明。
+- [修复] 修复 BOLL 未启用时 prompt schema 仍要求 LLM 输出布林带分析的问题，现已根据 `BOLL_ENABLED` 动态开关。
+- [修复] 修复 `BOLL_ENABLED=false` 时数据抓取器仍无条件计算布林带的问题，现已按配置控制计算。
+- [修复] 修复 `BOLL_PERIODS` 配置层允许输入不支持周期（如 30）的问题，新增 `_validate_boll_periods` 校验，仅接受 5/10/20。
+- [修复] 修复 BOLL 关闭时 prompt JSON 示例中包含非法 `#` 注释破坏严格 JSON 契约的问题。
+- [修复] 修复历史报告重建缺失 `boll_analysis` 字段映射的问题，确保通知路径和 Web 历史路径行为一致。
+- [测试] 新增 BOLL 功能专项测试（18 用例）：周期校验、条件计算、Prompt 条件渲染、JSON 契约、历史重建。
+- [chore] 新增 `tests/test_boll.py`。
 - [改进] Web AI 建议页新增主股票上下文，复用最近分析和股票索引候选，并改进表现统计零样本说明。
 - [改进] 补充本次设置页布局收敛：移动端分类导航改为横向滚动列表并保证设置内容首屏可见，桌面端保留分类说明并收紧字段布局层级与间距，提升首屏效率与可配置信息密度。
 - [文档] 在 README 快速开始中补充行情数据源配置说明（TUSHARE_TOKEN / Longbridge），明确未配置时仍可走 AkShare、Baostock、YFinance 等免费兜底源，日志中相关提示不影响运行。同步更新docs下的中英双份 README
