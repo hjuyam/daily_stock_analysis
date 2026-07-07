@@ -2551,6 +2551,18 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                                 'ma10': excluded.ma10,
                                 'ma20': excluded.ma20,
                                 'volume_ratio': excluded.volume_ratio,
+                                'boll_5u': excluded.boll_5u,
+                                'boll_5m': excluded.boll_5m,
+                                'boll_5l': excluded.boll_5l,
+                                'boll_5_width': excluded.boll_5_width,
+                                'boll_10u': excluded.boll_10u,
+                                'boll_10m': excluded.boll_10m,
+                                'boll_10l': excluded.boll_10l,
+                                'boll_10_width': excluded.boll_10_width,
+                                'boll_20u': excluded.boll_20u,
+                                'boll_20m': excluded.boll_20m,
+                                'boll_20l': excluded.boll_20l,
+                                'boll_20_width': excluded.boll_20_width,
                                 'data_source': excluded.data_source,
                                 'updated_at': excluded.updated_at,
                             },
@@ -2587,6 +2599,18 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     existing.ma10 = record['ma10']
                     existing.ma20 = record['ma20']
                     existing.volume_ratio = record['volume_ratio']
+                    existing.boll_5u = record['boll_5u']
+                    existing.boll_5m = record['boll_5m']
+                    existing.boll_5l = record['boll_5l']
+                    existing.boll_5_width = record['boll_5_width']
+                    existing.boll_10u = record['boll_10u']
+                    existing.boll_10m = record['boll_10m']
+                    existing.boll_10l = record['boll_10l']
+                    existing.boll_10_width = record['boll_10_width']
+                    existing.boll_20u = record['boll_20u']
+                    existing.boll_20m = record['boll_20m']
+                    existing.boll_20l = record['boll_20l']
+                    existing.boll_20_width = record['boll_20_width']
                     existing.data_source = record['data_source']
                     existing.updated_at = record['updated_at']
                 return new_count
