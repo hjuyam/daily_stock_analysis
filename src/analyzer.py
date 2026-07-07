@@ -2378,7 +2378,7 @@ class GeminiAnalyzer:
         if boll_enabled:
             boll_schema_field = '"boll_analysis": "布林带分析（基于BOLL数据，分析价格在布林带中的位置、带宽变化、突破/回踩信号等，50-200字）",'
         else:
-            boll_schema_field = '"boll_analysis": "",  # BOLL未启用，留空'
+            boll_schema_field = '"boll_analysis": "",'
         base_prompt = base_prompt.replace("{boll_schema_field}", boll_schema_field)
 
         if lang == "en":

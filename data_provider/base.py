@@ -571,13 +571,18 @@ class BaseFetcher(ABC):
         df['ma20'] = df['close'].rolling(window=20, min_periods=1).mean()
         
         # 布林带（Bollinger Bands）：中轨 = MA，上轨/下轨 = MA ± 2*std
-        for p in [5, 10, 20]:
-            ma = df[f'ma{p}']
-            std = df['close'].rolling(window=p, min_periods=1).std()
-            df[f'boll_{p}u'] = ma + 2 * std
-            df[f'boll_{p}m'] = ma
-            df[f'boll_{p}l'] = ma - 2 * std
-            df[f'boll_{p}_width'] = ((df[f'boll_{p}u'] - df[f'boll_{p}l']) / df[f'boll_{p}m']) * 100
+        # 仅在 BOLL_ENABLED=true 时计算
+        from src.config import get_config
+        _boll_config = get_config()
+        _boll_enabled = getattr(_boll_config, 'boll_enabled', False)
+        if _boll_enabled:
+            for p in [5, 10, 20]:
+                ma = df[f'ma{p}']
+                std = df['close'].rolling(window=p, min_periods=1).std()
+                df[f'boll_{p}u'] = ma + 2 * std
+                df[f'boll_{p}m'] = ma
+                df[f'boll_{p}l'] = ma - 2 * std
+                df[f'boll_{p}_width'] = ((df[f'boll_{p}u'] - df[f'boll_{p}l']) / df[f'boll_{p}m']) * 100
         
         # 量比：当日成交量 / 5日平均成交量
         # 注意：此处的 volume_ratio 是“日线成交量 / 前5日均量(shift 1)”的相对倍数，
@@ -589,8 +594,9 @@ class BaseFetcher(ABC):
         
         # 保留2位小数
         rounding_cols = ['ma5', 'ma10', 'ma20', 'volume_ratio']
-        for p in [5, 10, 20]:
-            rounding_cols += [f'boll_{p}u', f'boll_{p}m', f'boll_{p}l', f'boll_{p}_width']
+        if _boll_enabled:
+            for p in [5, 10, 20]:
+                rounding_cols += [f'boll_{p}u', f'boll_{p}m', f'boll_{p}l', f'boll_{p}_width']
         for col in rounding_cols:
             if col in df.columns:
                 df[col] = df[col].round(2)

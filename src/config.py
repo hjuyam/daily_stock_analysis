@@ -214,6 +214,30 @@ def parse_env_bool(value: Optional[str], default: bool = False) -> bool:
     return normalized not in _FALSEY_ENV_VALUES
 
 
+def _validate_boll_periods(periods_str: str) -> str:
+    """Validate and normalize BOLL_PERIODS. Only 5, 10, 20 are supported.
+
+    Logs warnings for unsupported periods and falls back to 5,10,20.
+    """
+    supported = {5, 10, 20}
+    parts = [p.strip() for p in periods_str.split(',') if p.strip()]
+    valid = []
+    for p in parts:
+        try:
+            p_int = int(p)
+            if p_int in supported:
+                if p not in valid:
+                    valid.append(p)
+            else:
+                logger.warning("BOLL_PERIODS contains unsupported period %s (only 5/10/20 are supported); ignoring", p)
+        except ValueError:
+            logger.warning("BOLL_PERIODS contains invalid value '%s'; ignoring", p)
+    if not valid:
+        logger.warning("BOLL_PERIODS has no valid periods; falling back to 5,10,20")
+        return "5,10,20"
+    return ",".join(valid)
+
+
 def parse_env_int(
     value: Optional[str],
     default: int,
@@ -971,7 +995,7 @@ class Config:
 
     # === 布林带(BOLL)分析配置 ===
     boll_enabled: bool = False  # 默认关闭，用户按需开启
-    boll_periods: str = "5,10,20"  # 逗号分隔的周期列表
+    boll_periods: str = "5,10,20"  # 逗号分隔的周期列表，仅支持 5/10/20
 
     # Merge stock + market report into one notification (Issue #190)
     merge_email_notification: bool = False
@@ -1882,7 +1906,7 @@ class Config:
             report_history_compare_n=parse_env_int(os.getenv('REPORT_HISTORY_COMPARE_N'), 0, field_name='REPORT_HISTORY_COMPARE_N', minimum=0),
             analysis_delay=parse_env_float(os.getenv('ANALYSIS_DELAY'), 0.0, field_name='ANALYSIS_DELAY', minimum=0.0),
             boll_enabled=parse_env_bool(os.getenv('BOLL_ENABLED'), default=False),
-            boll_periods=(os.getenv('BOLL_PERIODS') or '5,10,20').strip(),
+            boll_periods=_validate_boll_periods(os.getenv('BOLL_PERIODS') or '5,10,20'),
             merge_email_notification=os.getenv('MERGE_EMAIL_NOTIFICATION', 'false').lower() == 'true',
             feishu_max_bytes=parse_env_int(os.getenv('FEISHU_MAX_BYTES'), 20000, field_name='FEISHU_MAX_BYTES', minimum=1),
             feishu_send_as_file=os.getenv('FEISHU_SEND_AS_FILE', '').lower() in ('true', '1', 'yes'),
