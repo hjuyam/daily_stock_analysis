@@ -217,17 +217,19 @@ def parse_env_bool(value: Optional[str], default: bool = False) -> bool:
 def _validate_boll_periods(periods_str: str) -> str:
     """Validate and normalize BOLL_PERIODS. Only 5, 10, 20 are supported.
 
-    Logs warnings for unsupported periods and falls back to 5,10,20.
+    Logs warnings for unsupported periods, normalizes to canonical form
+    (e.g. '05' -> '5'), and falls back to 5,10,20 when no valid periods remain.
     """
     supported = {5, 10, 20}
     parts = [p.strip() for p in periods_str.split(',') if p.strip()]
     valid = []
     for p in parts:
         try:
-            p_int = int(p)
+            p_int = int(p)  # '05' -> 5, canonical
             if p_int in supported:
-                if p not in valid:
-                    valid.append(p)
+                canonical = str(p_int)
+                if canonical not in valid:
+                    valid.append(canonical)
             else:
                 logger.warning("BOLL_PERIODS contains unsupported period %s (only 5/10/20 are supported); ignoring", p)
         except ValueError:

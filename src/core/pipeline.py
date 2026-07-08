@@ -334,10 +334,20 @@ class StockAnalysisPipeline:
 
             # 断点续传检查：如果最新可复用交易日的数据已存在，则跳过
             if not force_refresh and self.db.has_today_data(code, target_date):
-                logger.info(
-                    f"{stock_name}({code}) {target_date} 数据已存在，跳过获取（断点续传）"
-                )
-                return True, None
+                # 当 BOLL 启用时，还需验证已有行的 BOLL 列是否非空
+                boll_missing = False
+                if getattr(self.config, 'boll_enabled', False):
+                    boll_missing = not self.db.has_boll_data(code, target_date)
+                if not boll_missing:
+                    logger.info(
+                        f"{stock_name}({code}) {target_date} 数据已存在，跳过获取（断点续传）"
+                    )
+                    return True, None
+                if boll_missing:
+                    logger.info(
+                        f"{stock_name}({code}) {target_date} 数据已存在但缺乏 BOLL 指标，"
+                        "触发重新获取以填充布林带数据"
+                    )
 
             # 从数据源获取数据
             logger.info(f"{stock_name}({code}) 开始从数据源获取数据...")

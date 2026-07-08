@@ -1676,11 +1676,35 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             ).scalar_one_or_none()
             
             return result is not None
-    
+
+    def has_boll_data(self, code: str, target_date: Optional[date] = None) -> bool:
+        """
+        检查指定日期的数据是否包含有效的 BOLL 指标。
+
+        用于断点续传逻辑：当 BOLL_ENABLED=true 时，即使行已存在，
+        也需要检查 BOLL 列是否已填充，避免旧数据开启 BOLL 后传入空值。
+
+        Args:
+            code: 股票代码
+            target_date: 目标日期（默认今天）
+
+        Returns:
+            BOLL 数据是否有效
+        """
+        if target_date is None:
+            target_date = date.today()
+        with self.get_session() as session:
+            row = session.execute(
+                select(StockDaily.boll_5u).where(
+                    and_(
+                        StockDaily.code == code,
+                        StockDaily.date == target_date
+                    )
+                )
+            ).scalar_one_or_none()
+            return row is not None
+
     def get_latest_data(
-        self, 
-        code: str, 
-        days: int = 2
     ) -> List[StockDaily]:
         """
         获取最近 N 天的数据
