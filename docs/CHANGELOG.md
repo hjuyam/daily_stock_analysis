@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复 `BOLL_PERIODS` 配置层允许输入不支持周期（如 30）的问题，新增 `_validate_boll_periods` 校验，仅接受 5/10/20。
 - [修复] 修复 BOLL 关闭时 prompt JSON 示例中包含非法 `#` 注释破坏严格 JSON 契约的问题。
 - [修复] 修复历史报告重建缺失 `boll_analysis` 字段映射的问题，确保通知路径和 Web 历史路径行为一致。
-- [测试] 新增 BOLL 功能专项测试（18 用例）：周期校验、条件计算、Prompt 条件渲染、JSON 契约、历史重建。
+- [测试] 新增 BOLL 功能专项测试（22 用例）：周期校验、条件计算、Prompt 条件渲染、JSON 契约、历史重建、BOLL 关闭 upsert 保护、测试隔离。
+- [修复] 修复 `BOLL_ENABLED=false` 时 upsert 清空已有 BOLL 数据的问题，三处写入路径均添加 `_df_has_boll` 守卫。
 - [chore] 新增 `tests/test_boll.py`。
 - [改进] Web AI 建议页新增主股票上下文，复用最近分析和股票索引候选，并改进表现统计零样本说明。
 - [改进] 补充本次设置页布局收敛：移动端分类导航改为横向滚动列表并保证设置内容首屏可见，桌面端保留分类说明并收紧字段布局层级与间距，提升首屏效率与可配置信息密度。
