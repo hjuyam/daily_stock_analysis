@@ -3,6 +3,9 @@
 .env.*
 *.env
 *.env.local
+
+# Hermes agent working files
+.hermes/
 .env.*.local
 
 # 测试文件（可能包含敏感配置）

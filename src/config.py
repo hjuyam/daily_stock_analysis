@@ -996,7 +996,7 @@ class Config:
     analysis_delay: float = 0.0  # 个股分析与大盘分析之间的延迟
 
     # === 布林带(BOLL)分析配置 ===
-    boll_enabled: bool = False  # 默认关闭，用户按需开启
+    boll_enabled: bool = True  # 默认开启（纯计算，不依赖外部数据源）
     boll_periods: str = "5,10,20"  # 逗号分隔的周期列表，仅支持 5/10/20
 
     # Merge stock + market report into one notification (Issue #190)
@@ -1907,7 +1907,7 @@ class Config:
             report_integrity_retry=parse_env_int(os.getenv('REPORT_INTEGRITY_RETRY'), 1, field_name='REPORT_INTEGRITY_RETRY', minimum=0),
             report_history_compare_n=parse_env_int(os.getenv('REPORT_HISTORY_COMPARE_N'), 0, field_name='REPORT_HISTORY_COMPARE_N', minimum=0),
             analysis_delay=parse_env_float(os.getenv('ANALYSIS_DELAY'), 0.0, field_name='ANALYSIS_DELAY', minimum=0.0),
-            boll_enabled=parse_env_bool(os.getenv('BOLL_ENABLED'), default=False),
+            boll_enabled=parse_env_bool(os.getenv('BOLL_ENABLED'), default=True),
             boll_periods=_validate_boll_periods(os.getenv('BOLL_PERIODS') or '5,10,20'),
             merge_email_notification=os.getenv('MERGE_EMAIL_NOTIFICATION', 'false').lower() == 'true',
             feishu_max_bytes=parse_env_int(os.getenv('FEISHU_MAX_BYTES'), 20000, field_name='FEISHU_MAX_BYTES', minimum=1),
