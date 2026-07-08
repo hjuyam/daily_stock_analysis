@@ -235,11 +235,169 @@ class TestBollBackfill:
 
     def test_has_boll_data_returns_true_when_populated(self):
         """has_boll_data should return True when boll_5u is non-null."""
-        # This test verifies the query logic by checking that has_boll_data
-        # queries the correct column (boll_5u)
         from src.storage import get_db, StockDaily
         db = get_db()
-        # The method uses select(StockDaily.boll_5u) and checks scalar_one_or_none
-        # This is a contract test - the SQL query is valid SQLAlchemy
         assert hasattr(StockDaily, 'boll_5u'), "StockDaily must have boll_5u column"
         assert callable(getattr(db, 'has_boll_data', None)), "StorageService must have has_boll_data method"
+
+
+# ============================================================
+# Regression: BOLL_ENABLED=false upsert preserves existing data
+# ============================================================
+
+class TestBollDisabledUpsertRegression:
+    """Test that save_daily_data does NOT overwrite existing BOLL data
+    when the incoming DataFrame lacks BOLL columns (BOLL_ENABLED=false)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_db(self):
+        """Create a clean SQLite DB before each test."""
+        import tempfile, os
+        from src.storage import DatabaseManager, get_db
+
+        self._tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self._db_path = self._tmp.name
+        self._tmp.close()
+
+        # Reset singleton and create a new instance pointing to temp DB
+        DatabaseManager.reset_instance()
+        self.db = get_db()
+        # Force the singleton to use our temp DB
+        self.db._db_url = f'sqlite:///{self._db_path}'
+        from sqlalchemy import create_engine
+        self.db._engine = create_engine(self.db._db_url, echo=False)
+        from src.storage import Base
+        Base.metadata.create_all(self.db._engine)
+        self.db._initialized = True
+
+        yield
+
+        DatabaseManager.reset_instance()
+        try:
+            os.unlink(self._db_path)
+        except OSError:
+            pass
+
+    def _make_df_with_boll(self):
+        """DataFrame WITH BOLL columns (simulating BOLL_ENABLED=true)."""
+        import pandas as pd
+        from datetime import date, timedelta
+        today = date.today()
+        df = pd.DataFrame({
+            'date': [today - timedelta(days=i) for i in range(3, -1, -1)],
+            'open': [10.0, 11.0, 12.0, 11.5],
+            'high': [11.0, 12.0, 13.0, 12.0],
+            'low': [9.5, 10.5, 11.5, 11.0],
+            'close': [10.5, 11.5, 12.5, 11.8],
+            'volume': [1000, 1200, 1100, 1300],
+            'amount': [10500, 13800, 13750, 15340],
+            'pct_chg': [1.0, 0.5, -0.3, 0.8],
+            'ma5': [10.5, 11.0, 11.5, 11.8],
+            'ma10': [10.2, 10.8, 11.2, 11.5],
+            'ma20': [10.0, 10.5, 11.0, 11.3],
+            'volume_ratio': [1.0, 1.2, 1.1, 1.3],
+            'boll_5u': [12.0, 13.0, 14.0, 13.5],
+            'boll_5m': [10.5, 11.0, 11.5, 11.8],
+            'boll_5l': [9.0, 9.0, 9.0, 10.1],
+            'boll_5_width': [28.57, 36.36, 43.48, 28.81],
+            'boll_10u': [11.8, 12.8, 13.5, 13.2],
+            'boll_10m': [10.2, 10.8, 11.2, 11.5],
+            'boll_10l': [8.6, 8.8, 8.9, 9.8],
+            'boll_10_width': [31.37, 37.04, 41.07, 29.57],
+            'boll_20u': [11.5, 12.5, 13.0, 12.8],
+            'boll_20m': [10.0, 10.5, 11.0, 11.3],
+            'boll_20l': [8.5, 8.5, 9.0, 9.8],
+            'boll_20_width': [30.00, 38.10, 36.36, 26.55],
+        })
+        return df
+
+    def _make_df_without_boll(self):
+        """DataFrame WITHOUT BOLL columns (simulating BOLL_ENABLED=false)."""
+        import pandas as pd
+        from datetime import date, timedelta
+        today = date.today()
+        df = pd.DataFrame({
+            'date': [today - timedelta(days=i) for i in range(3, -1, -1)],
+            'open': [10.5, 11.5, 12.5, 12.0],
+            'high': [11.5, 12.5, 13.5, 12.5],
+            'low': [10.0, 11.0, 12.0, 11.5],
+            'close': [11.0, 12.0, 13.0, 12.2],
+            'volume': [1100, 1300, 1200, 1400],
+            'amount': [12100, 15600, 15600, 17080],
+            'pct_chg': [1.5, 0.8, -0.2, 1.0],
+            'ma5': [10.8, 11.3, 11.8, 12.0],
+            'ma10': [10.4, 11.0, 11.4, 11.7],
+            'ma20': [10.2, 10.7, 11.2, 11.5],
+            'volume_ratio': [1.1, 1.3, 1.2, 1.4],
+        })
+        return df
+
+    def test_upsert_without_boll_preserves_existing_boll_data(self):
+        """After saving with BOLL then saving without BOLL, BOLL data should persist."""
+        from datetime import date, timedelta
+        from src.storage import StockDaily
+        from sqlalchemy import select
+
+        today = date.today()
+
+        # Step 1: Save with BOLL columns (enabled)
+        df_with = self._make_df_with_boll()
+        inserted = self.db.save_daily_data(df_with, '600519', 'TestFetcher')
+        assert inserted >= 0
+
+        # Verify BOLL data was saved
+        with self.db.get_session() as session:
+            for row_date in [today - timedelta(days=i) for i in range(3, -1, -1)]:
+                row = session.execute(
+                    select(StockDaily).where(
+                        StockDaily.code == '600519',
+                        StockDaily.date == row_date,
+                    )
+                ).scalar_one_or_none()
+                assert row is not None, f"Row for {row_date} not found"
+                assert row.boll_5u is not None, f"boll_5u for {row_date} should be set"
+
+        # Step 2: Save WITHOUT BOLL columns (disabled) - same dates
+        df_without = self._make_df_without_boll()
+        inserted = self.db.save_daily_data(df_without, '600519', 'TestFetcher')
+
+        # Step 3: Verify BOLL data is STILL intact
+        with self.db.get_session() as session:
+            for row_date in [today - timedelta(days=i) for i in range(3, -1, -1)]:
+                row = session.execute(
+                    select(StockDaily).where(
+                        StockDaily.code == '600519',
+                        StockDaily.date == row_date,
+                    )
+                ).scalar_one_or_none()
+                assert row is not None, f"Row for {row_date} not found"
+                assert row.boll_5u is not None, \
+                    f"boll_5u for {row_date} was wiped! BOLL data lost after disabled upsert"
+                assert row.boll_5m is not None
+                assert row.boll_5l is not None
+                assert row.boll_20_width is not None
+                # Verify non-BOLL fields WERE updated by the second save
+                assert row.close == 11.0 or row.close == 12.0 or row.close == 13.0 or row.close == 12.2
+
+    def test_new_record_without_boll_stores_null(self):
+        """Saving a brand new record without BOLL columns should store NULL."""
+        from datetime import date
+        from src.storage import StockDaily
+        from sqlalchemy import select
+
+        df_without = self._make_df_without_boll()
+        inserted = self.db.save_daily_data(df_without, '000001', 'TestFetcher')
+
+        today = date.today()
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(StockDaily).where(
+                    StockDaily.code == '000001',
+                    StockDaily.date == today,
+                )
+            ).scalar_one_or_none()
+            assert row is not None, "New record should exist"
+            assert row.boll_5u is None, "BOLL columns should be NULL for new records without BOLL data"
+            assert row.boll_5m is None
+            assert row.boll_5l is None
+            assert row.close == 12.2

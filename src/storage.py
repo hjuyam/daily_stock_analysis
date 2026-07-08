@@ -2492,9 +2492,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
 
         now = datetime.now()
         records_by_date: Dict[date, Dict[str, Any]] = {}
+        # 检测 DataFrame 是否包含 BOLL 列
+        _df_has_boll = 'boll_5u' in df.columns
         for row in df.to_dict(orient='records'):
             row_date = self._normalize_daily_date(row.get('date'))
-            records_by_date[row_date] = {
+            row_dict = {
                 'code': code,
                 'date': row_date,
                 'open': self._normalize_sql_value(row.get('open')),
@@ -2508,23 +2510,28 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 'ma10': self._normalize_sql_value(row.get('ma10')),
                 'ma20': self._normalize_sql_value(row.get('ma20')),
                 'volume_ratio': self._normalize_sql_value(row.get('volume_ratio')),
-                # 布林带（Bollinger Bands）
-                'boll_5u': self._normalize_sql_value(row.get('boll_5u')),
-                'boll_5m': self._normalize_sql_value(row.get('boll_5m')),
-                'boll_5l': self._normalize_sql_value(row.get('boll_5l')),
-                'boll_5_width': self._normalize_sql_value(row.get('boll_5_width')),
-                'boll_10u': self._normalize_sql_value(row.get('boll_10u')),
-                'boll_10m': self._normalize_sql_value(row.get('boll_10m')),
-                'boll_10l': self._normalize_sql_value(row.get('boll_10l')),
-                'boll_10_width': self._normalize_sql_value(row.get('boll_10_width')),
-                'boll_20u': self._normalize_sql_value(row.get('boll_20u')),
-                'boll_20m': self._normalize_sql_value(row.get('boll_20m')),
-                'boll_20l': self._normalize_sql_value(row.get('boll_20l')),
-                'boll_20_width': self._normalize_sql_value(row.get('boll_20_width')),
                 'data_source': data_source,
                 'created_at': now,
                 'updated_at': now,
             }
+            # 布林带（Bollinger Bands）- 仅在 DataFrame 包含相应列时写入
+            # 避免 BOLL_ENABLED=false 时 upsert 清空已有 BOLL 数据
+            if _df_has_boll:
+                row_dict.update({
+                    'boll_5u': self._normalize_sql_value(row.get('boll_5u')),
+                    'boll_5m': self._normalize_sql_value(row.get('boll_5m')),
+                    'boll_5l': self._normalize_sql_value(row.get('boll_5l')),
+                    'boll_5_width': self._normalize_sql_value(row.get('boll_5_width')),
+                    'boll_10u': self._normalize_sql_value(row.get('boll_10u')),
+                    'boll_10m': self._normalize_sql_value(row.get('boll_10m')),
+                    'boll_10l': self._normalize_sql_value(row.get('boll_10l')),
+                    'boll_10_width': self._normalize_sql_value(row.get('boll_10_width')),
+                    'boll_20u': self._normalize_sql_value(row.get('boll_20u')),
+                    'boll_20m': self._normalize_sql_value(row.get('boll_20m')),
+                    'boll_20l': self._normalize_sql_value(row.get('boll_20l')),
+                    'boll_20_width': self._normalize_sql_value(row.get('boll_20_width')),
+                })
+            records_by_date[row_date] = row_dict
 
         if not records_by_date:
             return 0
@@ -2563,36 +2570,42 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     chunk = records[i : i + _SQLITE_CHUNK]
                     stmt = sqlite_insert(StockDaily).values(chunk)
                     excluded = stmt.excluded
+                    _update_set = {
+                        'open': excluded.open,
+                        'high': excluded.high,
+                        'low': excluded.low,
+                        'close': excluded.close,
+                        'volume': excluded.volume,
+                        'amount': excluded.amount,
+                        'pct_chg': excluded.pct_chg,
+                        'ma5': excluded.ma5,
+                        'ma10': excluded.ma10,
+                        'ma20': excluded.ma20,
+                        'volume_ratio': excluded.volume_ratio,
+                        'data_source': excluded.data_source,
+                        'updated_at': excluded.updated_at,
+                    }
+                    # 仅在 DataFrame 包含 BOLL 列时更新 BOLL 字段
+                    # 避免 BOLL_ENABLED=false 时 upsert 清空已有 BOLL 数据
+                    if _df_has_boll:
+                        _update_set.update({
+                            'boll_5u': excluded.boll_5u,
+                            'boll_5m': excluded.boll_5m,
+                            'boll_5l': excluded.boll_5l,
+                            'boll_5_width': excluded.boll_5_width,
+                            'boll_10u': excluded.boll_10u,
+                            'boll_10m': excluded.boll_10m,
+                            'boll_10l': excluded.boll_10l,
+                            'boll_10_width': excluded.boll_10_width,
+                            'boll_20u': excluded.boll_20u,
+                            'boll_20m': excluded.boll_20m,
+                            'boll_20l': excluded.boll_20l,
+                            'boll_20_width': excluded.boll_20_width,
+                        })
                     session.execute(
                         stmt.on_conflict_do_update(
                             index_elements=['code', 'date'],
-                            set_={
-                                'open': excluded.open,
-                                'high': excluded.high,
-                                'low': excluded.low,
-                                'close': excluded.close,
-                                'volume': excluded.volume,
-                                'amount': excluded.amount,
-                                'pct_chg': excluded.pct_chg,
-                                'ma5': excluded.ma5,
-                                'ma10': excluded.ma10,
-                                'ma20': excluded.ma20,
-                                'volume_ratio': excluded.volume_ratio,
-                                'boll_5u': excluded.boll_5u,
-                                'boll_5m': excluded.boll_5m,
-                                'boll_5l': excluded.boll_5l,
-                                'boll_5_width': excluded.boll_5_width,
-                                'boll_10u': excluded.boll_10u,
-                                'boll_10m': excluded.boll_10m,
-                                'boll_10l': excluded.boll_10l,
-                                'boll_10_width': excluded.boll_10_width,
-                                'boll_20u': excluded.boll_20u,
-                                'boll_20m': excluded.boll_20m,
-                                'boll_20l': excluded.boll_20l,
-                                'boll_20_width': excluded.boll_20_width,
-                                'data_source': excluded.data_source,
-                                'updated_at': excluded.updated_at,
-                            },
+                            set_=_update_set,
                         )
                     )
                 return len(new_records)
@@ -2626,18 +2639,19 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     existing.ma10 = record['ma10']
                     existing.ma20 = record['ma20']
                     existing.volume_ratio = record['volume_ratio']
-                    existing.boll_5u = record['boll_5u']
-                    existing.boll_5m = record['boll_5m']
-                    existing.boll_5l = record['boll_5l']
-                    existing.boll_5_width = record['boll_5_width']
-                    existing.boll_10u = record['boll_10u']
-                    existing.boll_10m = record['boll_10m']
-                    existing.boll_10l = record['boll_10l']
-                    existing.boll_10_width = record['boll_10_width']
-                    existing.boll_20u = record['boll_20u']
-                    existing.boll_20m = record['boll_20m']
-                    existing.boll_20l = record['boll_20l']
-                    existing.boll_20_width = record['boll_20_width']
+                    if _df_has_boll:
+                        existing.boll_5u = record['boll_5u']
+                        existing.boll_5m = record['boll_5m']
+                        existing.boll_5l = record['boll_5l']
+                        existing.boll_5_width = record['boll_5_width']
+                        existing.boll_10u = record['boll_10u']
+                        existing.boll_10m = record['boll_10m']
+                        existing.boll_10l = record['boll_10l']
+                        existing.boll_10_width = record['boll_10_width']
+                        existing.boll_20u = record['boll_20u']
+                        existing.boll_20m = record['boll_20m']
+                        existing.boll_20l = record['boll_20l']
+                        existing.boll_20_width = record['boll_20_width']
                     existing.data_source = record['data_source']
                     existing.updated_at = record['updated_at']
                 return new_count
