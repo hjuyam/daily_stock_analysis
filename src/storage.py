@@ -1705,6 +1705,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             return row is not None
 
     def get_latest_data(
+        self,
+        code: str,
+        days: int = 2,
     ) -> List[StockDaily]:
         """
         获取最近 N 天的数据
