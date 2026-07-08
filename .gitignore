@@ -74,6 +74,9 @@ htmlcov/
 
 local/
 
+# 本地开发/测试脚本（非版本控制）
+scripts/dsa_single.py
+
 run.sh
 
 verify_*.py
