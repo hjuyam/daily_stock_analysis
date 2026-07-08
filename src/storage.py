@@ -98,32 +98,32 @@ class DatabaseSchemaMigration(Base):
 class StockDaily(Base):
     """
     股票日线数据模型
-    
+
     存储每日行情数据和计算的技术指标
     支持多股票、多日期的唯一约束
     """
     __tablename__ = 'stock_daily'
-    
+
     # 主键
     id = Column(Integer, primary_key=True, autoincrement=True)
-    
+
     # 股票代码（如 600519, 000001）
     code = Column(String(10), nullable=False, index=True)
-    
+
     # 交易日期
     date = Column(Date, nullable=False, index=True)
-    
+
     # OHLC 数据
     open = Column(Float)
     high = Column(Float)
     low = Column(Float)
     close = Column(Float)
-    
+
     # 成交数据
     volume = Column(Float)  # 成交量（股）
     amount = Column(Float)  # 成交额（元）
     pct_chg = Column(Float)  # 涨跌幅（%）
-    
+
     # 技术指标
     ma5 = Column(Float)
     ma10 = Column(Float)
@@ -143,23 +143,23 @@ class StockDaily(Base):
     boll_20m = Column(Float)  # BOLL(20) 中轨
     boll_20l = Column(Float)  # BOLL(20) 下轨
     boll_20_width = Column(Float)  # BOLL(20) 带宽%
-    
+
     # 数据来源
     data_source = Column(String(50))  # 记录数据来源（如 AkshareFetcher）
-    
+
     # 更新时间
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    
+
     # 唯一约束：同一股票同一日期只能有一条数据
     __table_args__ = (
         UniqueConstraint('code', 'date', name='uix_code_date'),
         Index('ix_code_date', 'code', 'date'),
     )
-    
+
     def __repr__(self):
         return f"<StockDaily(code={self.code}, date={self.date}, close={self.close})>"
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
@@ -1153,28 +1153,28 @@ class _DatabaseManagerMeta(type):
 class DatabaseManager(metaclass=_DatabaseManagerMeta):
     """
     数据库管理器 - 单例模式
-    
+
     职责：
     1. 管理数据库连接池
     2. 提供 Session 上下文管理
     3. 封装数据存取操作
     """
-    
+
     _instance: Optional['DatabaseManager'] = None
     _init_lock = threading.RLock()
     _initialized: bool = False
-    
+
     def __new__(cls, *args, **kwargs):
         """单例模式实现"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
-    
+
     def __init__(self, db_url: Optional[str] = None):
         """
         初始化数据库管理器
-        
+
         Args:
             db_url: 数据库连接 URL（可选，默认从配置读取）
         """
@@ -1425,9 +1425,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                         continue
                     raise
 
-    
+
     def _ensure_stock_daily_boll_columns(self) -> None:
-        """Add nullable Bollinger Bands columns to existing stock_daily SQLite tables."""
+        """Add nullable Bollinger Bands columns to existing stock_daily SQLite tables
+        with locked retry (matching _ensure_llm_usage_telemetry_columns pattern)."""
         if not self._is_sqlite_engine:
             return
         try:
@@ -1442,20 +1443,38 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             )
             return
 
+        max_retries = self._sqlite_write_retry_max
         for column, column_type in _BOLL_COLUMNS_SQL.items():
             if column in existing:
                 continue
-            try:
-                with self._engine.begin() as connection:
-                    connection.exec_driver_sql(
-                        f"ALTER TABLE {StockDaily.__tablename__} "
-                        f"ADD COLUMN {column} {column_type}"
-                    )
-                logger.info("[BOLL] added column %s to stock_daily", column)
-            except OperationalError as exc:
-                if self._is_sqlite_duplicate_column_error(exc, column):
-                    continue
-                raise
+            for attempt in range(max_retries + 1):
+                try:
+                    with self._engine.begin() as connection:
+                        connection.exec_driver_sql(
+                            f"ALTER TABLE {StockDaily.__tablename__} "
+                            f"ADD COLUMN {column} {column_type}"
+                        )
+                    existing.add(column)
+                    logger.info("[BOLL] added column %s to stock_daily", column)
+                    break
+                except OperationalError as exc:
+                    if self._is_sqlite_duplicate_column_error(exc, column):
+                        existing.add(column)
+                        break
+                    if self._is_sqlite_locked_error(exc) and attempt < max_retries:
+                        delay = self._sqlite_write_retry_base_delay * (2 ** attempt)
+                        logger.warning(
+                            "[BOLL] SQLite ALTER TABLE locked, "
+                            "retrying: %s (%s/%s, %.2fs)",
+                            column,
+                            attempt + 1,
+                            max_retries,
+                            delay,
+                        )
+                        if delay > 0:
+                            time.sleep(delay)
+                        continue
+                    raise
 
     def _ensure_intelligence_item_scope_values(self) -> None:
         """Backfill nullable intelligence item scopes so SQLite unique keys work."""
@@ -1489,7 +1508,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             if cls._instance is None:
                 cls()
             return cls._instance
-    
+
     @classmethod
     def reset_instance(cls) -> None:
         """重置单例（用于测试）"""
@@ -1611,11 +1630,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
     @staticmethod
     def _normalize_sql_value(value: Any) -> Any:
         return None if pd.isna(value) else value
-    
+
     def get_session(self) -> Session:
         """
         获取数据库 Session
-        
+
         使用示例:
             with db.get_session() as session:
                 # 执行查询
@@ -1645,17 +1664,17 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             raise
         finally:
             session.close()
-    
+
     def has_today_data(self, code: str, target_date: Optional[date] = None) -> bool:
         """
         检查是否已有指定日期的数据
-        
+
         用于断点续传逻辑：如果已有数据则跳过网络请求
-        
+
         Args:
             code: 股票代码
             target_date: 目标日期（默认今天）
-            
+
         Returns:
             是否存在数据
         """
@@ -1664,7 +1683,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         # 注意：这里的 target_date 语义是“自然日”，而不是“最新交易日”。
         # 在周末/节假日/非交易日运行时，即使数据库已有最新交易日数据，这里也会返回 False。
         # 该行为目前保留（按需求不改逻辑）。
-        
+
         with self.get_session() as session:
             result = session.execute(
                 select(StockDaily).where(
@@ -1674,7 +1693,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     )
                 )
             ).scalar_one_or_none()
-            
+
             return result is not None
 
     def has_boll_data(self, code: str, target_date: Optional[date] = None) -> bool:
@@ -1711,13 +1730,13 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
     ) -> List[StockDaily]:
         """
         获取最近 N 天的数据
-        
+
         用于计算"相比昨日"的变化
-        
+
         Args:
             code: 股票代码
             days: 获取天数
-            
+
         Returns:
             StockDaily 对象列表（按日期降序）
         """
@@ -1728,7 +1747,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 .order_by(desc(StockDaily.date))
                 .limit(days)
             ).scalars().all()
-            
+
             return list(results)
 
     def save_news_intel(
@@ -2192,7 +2211,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 .order_by(desc(AnalysisHistory.created_at), desc(AnalysisHistory.id))
                 .limit(1)
             ).scalar_one_or_none()
-    
+
     def get_analysis_history_paginated(
         self,
         code: Optional[Union[str, List[str]]] = None,
@@ -2204,7 +2223,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
     ) -> Tuple[List[AnalysisHistory], int]:
         """
         分页查询分析历史记录（带总数）
-        
+
         Args:
             code: 股票代码筛选
             report_type: 报告类型筛选
@@ -2212,15 +2231,15 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             end_date: 结束日期（含）
             offset: 偏移量（跳过前 N 条）
             limit: 每页数量
-            
+
         Returns:
             Tuple[List[AnalysisHistory], int]: (记录列表, 总数)
         """
         from sqlalchemy import func
-        
+
         with self.get_session() as session:
             conditions = []
-            
+
             if code:
                 if isinstance(code, list):
                     codes = [c for c in code if c]
@@ -2236,14 +2255,14 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             if end_date:
                 # created_at < end_date+1 00:00:00 (即 <= end_date 23:59:59)
                 conditions.append(AnalysisHistory.created_at < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
-            
+
             # 构建 where 子句
             where_clause = and_(*conditions) if conditions else True
-            
+
             # 查询总数
             total_query = select(func.count(AnalysisHistory.id)).where(where_clause)
             total = session.execute(total_query).scalar() or 0
-            
+
             # 查询分页数据
             data_query = (
                 select(AnalysisHistory)
@@ -2253,19 +2272,19 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 .limit(limit)
             )
             results = session.execute(data_query).scalars().all()
-            
+
             return list(results), total
-    
+
     def get_analysis_history_by_id(self, record_id: int) -> Optional[AnalysisHistory]:
         """
         根据数据库主键 ID 查询单条分析历史记录
-        
+
         由于 query_id 可能重复（批量分析时多条记录共享同一 query_id），
         使用主键 ID 确保精确查询唯一记录。
-        
+
         Args:
             record_id: 分析历史记录的主键 ID
-            
+
         Returns:
             AnalysisHistory 对象，不存在返回 None
         """
@@ -2431,21 +2450,21 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 .limit(1)
             ).scalars().first()
             return result
-    
+
     def get_data_range(
-        self, 
-        code: str, 
-        start_date: date, 
+        self,
+        code: str,
+        start_date: date,
         end_date: date
     ) -> List[StockDaily]:
         """
         获取指定日期范围的数据
-        
+
         Args:
             code: 股票代码
             start_date: 开始日期
             end_date: 结束日期
-            
+
         Returns:
             StockDaily 对象列表
         """
@@ -2461,28 +2480,28 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 )
                 .order_by(StockDaily.date)
             ).scalars().all()
-            
+
             return list(results)
-    
+
     def save_daily_data(
-        self, 
-        df: pd.DataFrame, 
+        self,
+        df: pd.DataFrame,
         code: str,
         data_source: str = "Unknown"
     ) -> int:
         """
         保存日线数据到数据库
-        
+
         策略：
         - 按 `(code, date)` 做批量 UPSERT，已存在记录会覆盖更新
         - 同一批次内若存在重复日期，以最后一条记录为准
         - SQLite 分支按 chunk 写入以避免绑定参数上限
-        
+
         Args:
             df: 包含日线数据的 DataFrame
             code: 股票代码
             data_source: 数据来源名称
-            
+
         Returns:
             本次实际新增的记录数（不含更新）
         """
@@ -2666,21 +2685,21 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         except Exception as e:
             logger.error(f"保存 {code} 数据失败: {e}")
             raise
-    
+
     def get_analysis_context(
-        self, 
+        self,
         code: str,
         target_date: Optional[date] = None
     ) -> Optional[Dict[str, Any]]:
         """
         获取分析所需的上下文数据
-        
+
         返回今日数据 + 昨日数据的对比信息
-        
+
         Args:
             code: 股票代码
             target_date: 目标日期（默认今天）
-            
+
         Returns:
             包含今日数据、昨日对比等信息的字典
         """
@@ -2690,46 +2709,46 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         # 并不会按 target_date 精确取当日/前一交易日的上下文。
         # 因此若未来需要支持“按历史某天复盘/重算”的可解释性，这里需要调整。
         # 该行为目前保留（按需求不改逻辑）。
-        
+
         # 获取最近2天数据
         recent_data = self.get_latest_data(code, days=2)
-        
+
         if not recent_data:
             logger.warning(f"未找到 {code} 的数据")
             return None
-        
+
         today_data = recent_data[0]
         yesterday_data = recent_data[1] if len(recent_data) > 1 else None
-        
+
         context = {
             'code': code,
             'date': today_data.date.isoformat(),
             'today': today_data.to_dict(),
         }
-        
+
         if yesterday_data:
             context['yesterday'] = yesterday_data.to_dict()
-            
+
             # 计算相比昨日的变化
             if yesterday_data.volume and yesterday_data.volume > 0:
                 context['volume_change_ratio'] = round(
                     today_data.volume / yesterday_data.volume, 2
                 )
-            
+
             if yesterday_data.close and yesterday_data.close > 0:
                 context['price_change_ratio'] = round(
                     (today_data.close - yesterday_data.close) / yesterday_data.close * 100, 2
                 )
-            
+
             # 均线形态判断
             context['ma_status'] = self._analyze_ma_status(today_data)
-        
+
         return context
-    
+
     def _analyze_ma_status(self, data: StockDaily) -> str:
         """
         分析均线形态
-        
+
         判断条件：
         - 多头排列：close > ma5 > ma10 > ma20
         - 空头排列：close < ma5 < ma10 < ma20
@@ -2742,7 +2761,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         ma5 = data.ma5 or 0
         ma10 = data.ma10 or 0
         ma20 = data.ma20 or 0
-        
+
         if close > ma5 > ma10 > ma20 > 0:
             return "多头排列 📈"
         elif close < ma5 < ma10 < ma20 and ma20 > 0:
@@ -3472,16 +3491,16 @@ def _coerce_llm_usage_non_negative_int(value: Any) -> Optional[int]:
 if __name__ == "__main__":
     # 测试代码
     logging.basicConfig(level=logging.DEBUG)
-    
+
     db = get_db()
-    
+
     print("=== 数据库测试 ===")
     print(f"数据库初始化成功")
-    
+
     # 测试检查今日数据
     has_data = db.has_today_data('600519')
     print(f"茅台今日是否有数据: {has_data}")
-    
+
     # 测试保存数据
     test_df = pd.DataFrame({
         'date': [date.today()],
@@ -3497,10 +3516,10 @@ if __name__ == "__main__":
         'ma20': [1790.0],
         'volume_ratio': [1.2],
     })
-    
+
     saved = db.save_daily_data(test_df, '600519', 'TestSource')
     print(f"保存测试数据: {saved} 条")
-    
+
     # 测试获取上下文
     context = db.get_analysis_context('600519')
     print(f"分析上下文: {context}")

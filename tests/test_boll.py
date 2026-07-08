@@ -251,9 +251,12 @@ class TestBollDisabledUpsertRegression:
 
     @pytest.fixture(autouse=True)
     def _setup_db(self):
-        """Create a clean SQLite DB before each test."""
+        """Create a clean isolated SQLite DB before each test."""
         import tempfile, os
         from src.storage import DatabaseManager, get_db
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from src.storage import Base
 
         self._tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
         self._db_path = self._tmp.name
@@ -262,11 +265,15 @@ class TestBollDisabledUpsertRegression:
         # Reset singleton and create a new instance pointing to temp DB
         DatabaseManager.reset_instance()
         self.db = get_db()
-        # Force the singleton to use our temp DB
+        # Point engine to temp DB
         self.db._db_url = f'sqlite:///{self._db_path}'
-        from sqlalchemy import create_engine
         self.db._engine = create_engine(self.db._db_url, echo=False)
-        from src.storage import Base
+        self.db._is_sqlite_engine = True
+        # Rebuild session factory bound to the new engine
+        self.db._SessionLocal = sessionmaker(
+            bind=self.db._engine,
+            autoflush=False,
+        )
         Base.metadata.create_all(self.db._engine)
         self.db._initialized = True
 
