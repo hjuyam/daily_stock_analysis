@@ -337,7 +337,8 @@ class StockAnalysisPipeline:
                 # 当 BOLL 启用时，还需验证已有行的 BOLL 列是否非空
                 boll_missing = False
                 if getattr(self.config, 'boll_enabled', False):
-                    boll_missing = not self.db.has_boll_data(code, target_date)
+                    boll_periods = getattr(self.config, 'boll_periods', None)
+                    boll_missing = not self.db.has_boll_data(code, target_date, boll_periods=boll_periods)
                 if not boll_missing:
                     logger.info(
                         f"{stock_name}({code}) {target_date} 数据已存在，跳过获取（断点续传）"

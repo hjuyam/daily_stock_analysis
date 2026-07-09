@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复桌面端 `WEBUI_HOST=*` / `WEBUI_HOST=[::]` 会被原样传给端口探测和后端启动导致无法监听的问题，启动前分别规范化为 `0.0.0.0` / `::`。
 - [改进] `STOCK_LIST` 自选股解析支持中文逗号、顿号、分号、空格和换行等常见粘贴分隔符，运行时、定时热刷新、CLI `--stocks`、Web 设置保存和自选 API 统一识别，并在写回时规范为英文逗号。
 - [改进] 新增 `NEWS_INTEL_AUTO_FETCH_ENABLED` 单开关，开启后个股分析、Agent 分析和大盘复盘会 fail-open 自动初始化并刷新 RSS/Atom/NewsNow 本地资讯池。
-- [新功能] 新增布林带（Bollinger Bands）技术指标分析，支持 BOLL(5/10/20) 三周期上轨/中轨/下轨/带宽计算，通过 `BOLL_ENABLED=true` 和 `BOLL_PERIODS=5,10,20` 配置启用（默认关闭）。
+- [新功能] 新增布林带（Bollinger Bands）技术指标分析，支持 BOLL(5/10/20) 三周期上轨/中轨/下轨/带宽计算，通过 `BOLL_ENABLED=true` 和 `BOLL_PERIODS=5,10,20` 配置启用（默认开启）。
 - [新功能] 个股分析报告新增「布林带分析」章节，LLM 基于 BOLL 数据输出独立分析，覆盖 Web UI 报告详情页和通知推送。
 - [文档] 补充 `.env.example`、`docs/full-guide.md`（中英文）的 BOLL 配置说明。
 - [修复] 修复 BOLL 未启用时 prompt schema 仍要求 LLM 输出布林带分析的问题，现已根据 `BOLL_ENABLED` 动态开关。
@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复 `BOLL_PERIODS` 配置层允许输入不支持周期（如 30）的问题，新增 `_validate_boll_periods` 校验，仅接受 5/10/20。
 - [修复] 修复 BOLL 关闭时 prompt JSON 示例中包含非法 `#` 注释破坏严格 JSON 契约的问题。
 - [修复] 修复历史报告重建缺失 `boll_analysis` 字段映射的问题，确保通知路径和 Web 历史路径行为一致。
-- [测试] 新增 BOLL 功能专项测试（22 用例）：周期校验、条件计算、Prompt 条件渲染、JSON 契约、历史重建、BOLL 关闭 upsert 保护、测试隔离。
+- [测试] 新增 BOLL 功能专项测试（24 用例）：周期校验、条件计算、Prompt 条件渲染、JSON 契约、历史重建、BOLL 关闭 upsert 保护、BOLL_PERIODS 子集 upsert 回归、测试隔离。
 - [修复] 修复 `BOLL_ENABLED=false` 时 upsert 清空已有 BOLL 数据的问题，三处写入路径均添加 `_df_has_boll` 守卫。
 - [改进] BOLL 默认改为开启（`BOLL_ENABLED=true`），因布林带为纯计算不依赖外部数据源，无需用户额外配置即可生效。
 - [chore] 新增 `tests/test_boll.py`。

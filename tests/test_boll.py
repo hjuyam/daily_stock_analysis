@@ -408,3 +408,201 @@ class TestBollDisabledUpsertRegression:
             assert row.boll_5m is None
             assert row.boll_5l is None
             assert row.close == 12.2
+
+
+# ============================================================
+# Regression: BOLL_PERIODS subset (e.g. only period 10) write paths
+# ============================================================
+
+class TestBollSubsetUpsert:
+    """Test that save_daily_data handles BOLL_PERIODS subset correctly.
+    BOLL_PERIODS=10 should only write boll_10* columns, not touch others."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_db(self):
+        """Create a clean isolated SQLite DB before each test."""
+        import tempfile, os
+        from src.storage import DatabaseManager, get_db
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from src.storage import Base
+
+        self._tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self._db_path = self._tmp.name
+        self._tmp.close()
+
+        # Reset singleton and create a new instance pointing to temp DB
+        DatabaseManager.reset_instance()
+        self.db = get_db()
+        # Point engine to temp DB
+        self.db._db_url = f'sqlite:///{self._db_path}'
+        self.db._engine = create_engine(self.db._db_url, echo=False)
+        self.db._is_sqlite_engine = True
+        # Rebuild session factory bound to the new engine
+        self.db._SessionLocal = sessionmaker(
+            bind=self.db._engine,
+            autoflush=False,
+        )
+        Base.metadata.create_all(self.db._engine)
+        yield
+        DatabaseManager.reset_instance()
+        try:
+            os.unlink(self._db_path)
+        except OSError:
+            pass
+
+    def _make_df_full_boll(self):
+        """DataFrame with ALL BOLL columns (period 5/10/20)."""
+        import pandas as pd
+        from datetime import date, timedelta
+        today = date.today()
+        df = pd.DataFrame({
+            'date': [today - timedelta(days=i) for i in range(3, -1, -1)],
+            'open': [10.0, 11.0, 12.0, 11.5],
+            'high': [11.0, 12.0, 13.0, 12.0],
+            'low': [9.5, 10.5, 11.5, 11.0],
+            'close': [10.5, 11.5, 12.5, 11.8],
+            'volume': [1000, 1200, 1100, 1300],
+            'amount': [10500, 13800, 13750, 15340],
+            'pct_chg': [1.0, 0.5, -0.3, 0.8],
+            'ma5': [10.5, 11.0, 11.5, 11.8],
+            'ma10': [10.2, 10.8, 11.2, 11.5],
+            'ma20': [10.0, 10.5, 11.0, 11.3],
+            'volume_ratio': [1.0, 1.2, 1.1, 1.3],
+            'boll_5u': [12.0, 13.0, 14.0, 13.5],
+            'boll_5m': [10.5, 11.0, 11.5, 11.8],
+            'boll_5l': [9.0, 9.0, 9.0, 10.1],
+            'boll_5_width': [28.57, 36.36, 43.48, 28.81],
+            'boll_10u': [11.8, 12.8, 13.5, 13.2],
+            'boll_10m': [10.2, 10.8, 11.2, 11.5],
+            'boll_10l': [8.6, 8.8, 8.9, 9.8],
+            'boll_10_width': [31.37, 37.04, 41.07, 29.57],
+            'boll_20u': [11.5, 12.5, 13.0, 12.8],
+            'boll_20m': [10.0, 10.5, 11.0, 11.3],
+            'boll_20l': [8.5, 8.5, 9.0, 9.8],
+            'boll_20_width': [30.00, 38.10, 36.36, 26.55],
+        })
+        return df
+
+    def _make_df_boll_period_10_only(self):
+        """DataFrame with ONLY boll_10* columns (simulating BOLL_PERIODS=10)."""
+        import pandas as pd
+        from datetime import date, timedelta
+        today = date.today()
+        df = pd.DataFrame({
+            'date': [today - timedelta(days=i) for i in range(3, -1, -1)],
+            'open': [11.0, 12.0, 13.0, 12.5],
+            'high': [12.0, 13.0, 14.0, 13.0],
+            'low': [10.5, 11.5, 12.5, 12.0],
+            'close': [11.5, 12.5, 13.5, 12.8],
+            'volume': [1100, 1300, 1200, 1400],
+            'amount': [12650, 16250, 16200, 17920],
+            'pct_chg': [1.2, 0.6, -0.2, 0.9],
+            'ma5': [10.8, 11.3, 11.8, 12.0],
+            'ma10': [10.4, 11.0, 11.4, 11.7],
+            'ma20': [10.2, 10.7, 11.2, 11.5],
+            'volume_ratio': [1.1, 1.3, 1.2, 1.4],
+            # Only boll_10* columns — no boll_5* or boll_20*
+            'boll_10u': [12.5, 13.5, 14.2, 13.8],
+            'boll_10m': [10.8, 11.3, 11.8, 12.0],
+            'boll_10l': [9.1, 9.1, 9.4, 10.2],
+            'boll_10_width': [31.48, 38.94, 40.68, 30.00],
+        })
+        return df
+
+    def test_subset_save_preserves_existing_full_boll_data(self):
+        """
+        After saving with full BOLL (period 5/10/20), saving with subset
+        (period 10 only) should NOT wipe period 5 or 20 data.
+        """
+        from datetime import date, timedelta
+        from src.storage import StockDaily
+        from sqlalchemy import select
+
+        today = date.today()
+
+        # Step 1: Save with full BOLL columns
+        df_full = self._make_df_full_boll()
+        self.db.save_daily_data(df_full, '600001', 'TestFetcher')
+
+        # Verify all periods were saved
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(StockDaily).where(
+                    StockDaily.code == '600001',
+                    StockDaily.date == today,
+                )
+            ).scalar_one_or_none()
+            assert row is not None
+            assert row.boll_5u is not None, "boll_5 should exist after full save"
+            assert row.boll_10u is not None
+            assert row.boll_20u is not None
+
+        # Step 2: Save with subset (period 10 only) — simulates config change
+        df_subset = self._make_df_boll_period_10_only()
+        self.db.save_daily_data(df_subset, '600001', 'TestFetcher')
+
+        # Verify period 5 and 20 data are still intact (NOT wiped)
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(StockDaily).where(
+                    StockDaily.code == '600001',
+                    StockDaily.date == today,
+                )
+            ).scalar_one_or_none()
+            assert row is not None
+            # Period 5 should still have its original values
+            assert row.boll_5u is not None, \
+                "boll_5u was wiped! Subset save should NOT overwrite non-configured period columns"
+            assert row.boll_5m is not None
+            assert row.boll_5l is not None
+            # Period 20 should still have its original values
+            assert row.boll_20u is not None, \
+                "boll_20u was wiped! Subset save should NOT overwrite non-configured period columns"
+            assert row.boll_20m is not None
+            assert row.boll_20l is not None
+            # Period 10 should have been updated to new values
+            assert row.boll_10u == 13.8, \
+                f"boll_10u should be updated to 13.8, got {row.boll_10u}"
+
+    def test_subset_save_only_writes_configured_columns(self):
+        """
+        Saving with BOLL_PERIODS=10 only should write boll_10* columns,
+        leave boll_5* and boll_20* as NULL for new records.
+        """
+        from datetime import date, timedelta
+        from src.storage import StockDaily
+        from sqlalchemy import select
+
+        today = date.today()
+
+        # Save with period 10 only (no prior data)
+        df_subset = self._make_df_boll_period_10_only()
+        self.db.save_daily_data(df_subset, '600002', 'TestFetcher')
+
+        # Verify
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(StockDaily).where(
+                    StockDaily.code == '600002',
+                    StockDaily.date == today,
+                )
+            ).scalar_one_or_none()
+            assert row is not None
+            # Period 10 should have values
+            assert row.boll_10u is not None
+            assert row.boll_10m is not None
+            assert row.boll_10l is not None
+            assert row.boll_10_width is not None
+            # Period 5 should be NULL (never configured)
+            assert row.boll_5u is None, \
+                "boll_5u should be NULL when only period 10 is configured"
+            assert row.boll_5m is None
+            assert row.boll_5l is None
+            assert row.boll_5_width is None
+            # Period 20 should be NULL (never configured)
+            assert row.boll_20u is None, \
+                "boll_20u should be NULL when only period 10 is configured"
+            assert row.boll_20m is None
+            assert row.boll_20l is None
+            assert row.boll_20_width is None

@@ -1696,25 +1696,45 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
 
             return result is not None
 
-    def has_boll_data(self, code: str, target_date: Optional[date] = None) -> bool:
+    def has_boll_data(self, code: str, target_date: Optional[date] = None,
+                      boll_periods: Optional[str] = None) -> bool:
         """
         检查指定日期的数据是否包含有效的 BOLL 指标。
 
         用于断点续传逻辑：当 BOLL_ENABLED=true 时，即使行已存在，
         也需要检查 BOLL 列是否已填充，避免旧数据开启 BOLL 后传入空值。
 
+        按配置周期动态检查（不再硬编码 boll_5u），支持 BOLL_PERIODS=10,20 等子集场景。
+
         Args:
             code: 股票代码
             target_date: 目标日期（默认今天）
+            boll_periods: 配置的周期列表字符串，如 "5,10,20"；未传入时检查所有已知周期
 
         Returns:
             BOLL 数据是否有效
         """
         if target_date is None:
             target_date = date.today()
+
+        # 确定需要检查哪些周期列
+        if boll_periods:
+            periods = [int(p.strip()) for p in boll_periods.split(',') if p.strip().isdigit()]
+        else:
+            periods = [5, 10, 20]  # 默认全量检查
+
+        if not periods:
+            return False
+
+        # 从配置周期中取第一个作为代表列（任一周期有数据即视为有效）
+        first_col_name = f'boll_{periods[0]}u'
+        first_col = getattr(StockDaily, first_col_name, None)
+        if first_col is None:
+            return False
+
         with self.get_session() as session:
             row = session.execute(
-                select(StockDaily.boll_5u).where(
+                select(first_col).where(
                     and_(
                         StockDaily.code == code,
                         StockDaily.date == target_date
@@ -2511,8 +2531,35 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
 
         now = datetime.now()
         records_by_date: Dict[date, Dict[str, Any]] = {}
-        # 检测 DataFrame 是否包含 BOLL 列
-        _df_has_boll = 'boll_5u' in df.columns
+        # 检测 DataFrame 是否包含 BOLL 列（按配置周期动态检测，不硬编码 boll_5u）
+        _df_has_boll = False
+        try:
+            from src.config import get_config
+            _boll_config = get_config()
+            _boll_periods_str = getattr(_boll_config, 'boll_periods', '5,10,20')
+            for part in _boll_periods_str.split(','):
+                p = part.strip()
+                if p.isdigit() and f'boll_{p}u' in df.columns:
+                    _df_has_boll = True
+                    break
+        except Exception:
+            # fallback: 兜底检测传统 5 周期
+            _df_has_boll = 'boll_5u' in df.columns
+        # 按配置周期构建动态 BOLL 列名列表（如 BOLL_PERIODS=10 → ['boll_10u', 'boll_10m', 'boll_10l', 'boll_10_width']）
+        # 仅包含 DataFrame 中实际存在的列，避免写入不存在的列导致 NULL 覆盖
+        _boll_columns: List[str] = []
+        if _df_has_boll:
+            try:
+                for part in _boll_periods_str.split(','):
+                    p = part.strip()
+                    if p.isdigit():
+                        for suffix in ('u', 'm', 'l', '_width'):
+                            col = f'boll_{p}{suffix}'
+                            if col in df.columns:
+                                _boll_columns.append(col)
+            except Exception:
+                # fallback: 全量列（仅含 df 中存在的）
+                _boll_columns = [c for c in df.columns if c.startswith('boll_')]
         for row in df.to_dict(orient='records'):
             row_date = self._normalize_daily_date(row.get('date'))
             row_dict = {
@@ -2535,20 +2582,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             }
             # 布林带（Bollinger Bands）- 仅在 DataFrame 包含相应列时写入
             # 避免 BOLL_ENABLED=false 时 upsert 清空已有 BOLL 数据
-            if _df_has_boll:
+            # 按配置周期动态写入，只写当前配置涉及的列（不硬编码 5/10/20 全量）
+            if _df_has_boll and _boll_columns:
                 row_dict.update({
-                    'boll_5u': self._normalize_sql_value(row.get('boll_5u')),
-                    'boll_5m': self._normalize_sql_value(row.get('boll_5m')),
-                    'boll_5l': self._normalize_sql_value(row.get('boll_5l')),
-                    'boll_5_width': self._normalize_sql_value(row.get('boll_5_width')),
-                    'boll_10u': self._normalize_sql_value(row.get('boll_10u')),
-                    'boll_10m': self._normalize_sql_value(row.get('boll_10m')),
-                    'boll_10l': self._normalize_sql_value(row.get('boll_10l')),
-                    'boll_10_width': self._normalize_sql_value(row.get('boll_10_width')),
-                    'boll_20u': self._normalize_sql_value(row.get('boll_20u')),
-                    'boll_20m': self._normalize_sql_value(row.get('boll_20m')),
-                    'boll_20l': self._normalize_sql_value(row.get('boll_20l')),
-                    'boll_20_width': self._normalize_sql_value(row.get('boll_20_width')),
+                    col: self._normalize_sql_value(row.get(col))
+                    for col in _boll_columns
                 })
             records_by_date[row_date] = row_dict
 
@@ -2606,20 +2644,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     }
                     # 仅在 DataFrame 包含 BOLL 列时更新 BOLL 字段
                     # 避免 BOLL_ENABLED=false 时 upsert 清空已有 BOLL 数据
-                    if _df_has_boll:
+                    # 按配置周期动态写入，只写当前配置涉及的列
+                    if _df_has_boll and _boll_columns:
                         _update_set.update({
-                            'boll_5u': excluded.boll_5u,
-                            'boll_5m': excluded.boll_5m,
-                            'boll_5l': excluded.boll_5l,
-                            'boll_5_width': excluded.boll_5_width,
-                            'boll_10u': excluded.boll_10u,
-                            'boll_10m': excluded.boll_10m,
-                            'boll_10l': excluded.boll_10l,
-                            'boll_10_width': excluded.boll_10_width,
-                            'boll_20u': excluded.boll_20u,
-                            'boll_20m': excluded.boll_20m,
-                            'boll_20l': excluded.boll_20l,
-                            'boll_20_width': excluded.boll_20_width,
+                            col: getattr(excluded, col)
+                            for col in _boll_columns
                         })
                     session.execute(
                         stmt.on_conflict_do_update(
@@ -2658,19 +2687,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     existing.ma10 = record['ma10']
                     existing.ma20 = record['ma20']
                     existing.volume_ratio = record['volume_ratio']
-                    if _df_has_boll:
-                        existing.boll_5u = record['boll_5u']
-                        existing.boll_5m = record['boll_5m']
-                        existing.boll_5l = record['boll_5l']
-                        existing.boll_5_width = record['boll_5_width']
-                        existing.boll_10u = record['boll_10u']
-                        existing.boll_10m = record['boll_10m']
-                        existing.boll_10l = record['boll_10l']
-                        existing.boll_10_width = record['boll_10_width']
-                        existing.boll_20u = record['boll_20u']
-                        existing.boll_20m = record['boll_20m']
-                        existing.boll_20l = record['boll_20l']
-                        existing.boll_20_width = record['boll_20_width']
+                    if _df_has_boll and _boll_columns:
+                        for col in _boll_columns:
+                            setattr(existing, col, record[col])
                     existing.data_source = record['data_source']
                     existing.updated_at = record['updated_at']
                 return new_count

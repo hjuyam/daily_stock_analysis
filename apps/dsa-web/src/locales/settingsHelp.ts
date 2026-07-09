@@ -1197,7 +1197,7 @@ const settingsHelpZhCN: SettingsHelpMap = {
   'settings.system.BOLL_ENABLED': {
     title: '布林带分析',
     summary: '启用布林带（Bollinger Bands）技术指标分析。开启后会在 LLM 分析 prompt 中加入各周期的上轨/中轨/下轨及带宽百分比数据。',
-    usage: '默认关闭以节省 token。设为 true 后生效，配合 BOLL_PERIODS 控制展示哪些周期。',
+    usage: '默认开启（纯计算不依赖外部数据源）。如需关闭设为 false。配合 BOLL_PERIODS 控制展示哪些周期。',
     impact: ['启用后每条分析增加约 45 token 开销（按三周期计算）。'],
     notes: ['各个周期的 band 全部计算后再传给 LLM，由 LLM 综合分析价格在通道内的位置。'],
   },
@@ -2347,7 +2347,7 @@ const settingsHelpEnUS: SettingsHelpMap = {
   'settings.system.BOLL_ENABLED': {
     title: 'Bollinger Bands Analysis',
     summary: 'Enable Bollinger Bands (BOLL) technical indicator. When enabled, upper/middle/lower bands and bandwidth are added to the LLM analysis prompt.',
-    usage: 'Disabled by default to save tokens. Set to true to enable. Use with BOLL_PERIODS to control which periods are shown.',
+    usage: 'Enabled by default (pure calculation, no external dependencies). Set to false to disable. Use with BOLL_PERIODS to control which periods are shown.',
     impact: ['Each analysis adds ~45 extra tokens when enabled (3 periods).'],
     notes: ['All configured periods are computed and passed to the LLM, which decides how to incorporate the data.'],
   },

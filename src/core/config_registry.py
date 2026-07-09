@@ -3500,14 +3500,14 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "BOLL_ENABLED": {
         "title": "布林带分析",
-        "description": "启用布林带（Bollinger Bands）技术指标。开启后会在 LLM 分析 prompt 中加入各周期的上轨/中轨/下轨及带宽百分比数据。默认关闭以节省 token。",
+        "description": "启用布林带（Bollinger Bands）技术指标。开启后会在 LLM 分析 prompt 中加入各周期的上轨/中轨/下轨及带宽百分比数据。默认开启（纯计算不依赖外部数据源）。",
         "category": "system",
         "data_type": "boolean",
         "ui_control": "switch",
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "false",
+        "default_value": "true",
         "options": [],
         "validation": {"enum": ["true", "false"]},
         "display_order": 60,
@@ -3516,7 +3516,12 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             "BOLL_ENABLED=true",
             "BOLL_ENABLED=false",
         ],
-        "docs": [],
+        "docs": [
+            {
+                "label": "完整指南：环境变量完整列表",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#环境变量完整列表",
+            },
+        ],
         "warning_codes": [],
     },
     "BOLL_PERIODS": {
@@ -3538,7 +3543,12 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             "BOLL_PERIODS=10",
             "BOLL_PERIODS=5,20",
         ],
-        "docs": [],
+        "docs": [
+            {
+                "label": "完整指南：环境变量完整列表",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#环境变量完整列表",
+            },
+        ],
         "warning_codes": [],
     },
     "ANALYSIS_DELAY": {
