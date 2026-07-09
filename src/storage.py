@@ -1726,22 +1726,28 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         if not periods:
             return False
 
-        # 从配置周期中取第一个作为代表列（任一周期有数据即视为有效）
-        first_col_name = f'boll_{periods[0]}u'
-        first_col = getattr(StockDaily, first_col_name, None)
-        if first_col is None:
-            return False
+        # 检查所有配置周期列是否都有数据（不再只检查第一个周期）
+        period_col_names = [f'boll_{p}u' for p in periods]
+        period_cols = []
+        for col_name in period_col_names:
+            col = getattr(StockDaily, col_name, None)
+            if col is None:
+                return False
+            period_cols.append(col)
 
         with self.get_session() as session:
             row = session.execute(
-                select(first_col).where(
+                select(*period_cols).where(
                     and_(
                         StockDaily.code == code,
                         StockDaily.date == target_date
                     )
                 )
-            ).scalar_one_or_none()
-            return row is not None
+            ).one_or_none()
+            if row is None:
+                return False
+            # 所有配置周期列都必须非空
+            return all(val is not None for val in row)
 
     def get_latest_data(
         self,

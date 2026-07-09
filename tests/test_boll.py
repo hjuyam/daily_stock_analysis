@@ -233,12 +233,127 @@ class TestBollHistoryReconstruction:
 class TestBollBackfill:
     """Test that has_boll_data detects missing BOLL values correctly."""
 
-    def test_has_boll_data_returns_true_when_populated(self):
-        """has_boll_data should return True when boll_5u is non-null."""
-        from src.storage import get_db, StockDaily
-        db = get_db()
-        assert hasattr(StockDaily, 'boll_5u'), "StockDaily must have boll_5u column"
-        assert callable(getattr(db, 'has_boll_data', None)), "StorageService must have has_boll_data method"
+    @pytest.fixture(autouse=True)
+    def _setup_db(self):
+        """Create a clean isolated SQLite DB before each test."""
+        import tempfile, os
+        from src.storage import DatabaseManager, get_db
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from src.storage import Base
+
+        self._tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self._db_path = self._tmp.name
+        self._tmp.close()
+
+        DatabaseManager.reset_instance()
+        self.db = get_db()
+        self.db._db_url = f'sqlite:///{self._db_path}'
+        self.db._engine = create_engine(self.db._db_url, echo=False)
+        self.db._is_sqlite_engine = True
+        self.db._SessionLocal = sessionmaker(
+            bind=self.db._engine,
+            autoflush=False,
+        )
+        Base.metadata.create_all(self.db._engine)
+        self.db._initialized = True
+
+        yield
+
+        DatabaseManager.reset_instance()
+        try:
+            os.unlink(self._db_path)
+        except OSError:
+            pass
+
+    def _insert_all_boll(self, code: str = '600519'):
+        """Insert a row with ALL 12 BOLL columns populated."""
+        import pandas as pd
+        from datetime import date, timedelta
+        today = date.today()
+        df = pd.DataFrame({
+            'date': [today],
+            'open': [10.0], 'high': [11.0], 'low': [9.5], 'close': [10.5],
+            'volume': [1000], 'amount': [10500], 'pct_chg': [1.0],
+            'ma5': [10.5], 'ma10': [10.2], 'ma20': [10.0], 'volume_ratio': [1.0],
+            'boll_5u': [12.0], 'boll_5m': [10.5], 'boll_5l': [9.0], 'boll_5_width': [28.57],
+            'boll_10u': [11.8], 'boll_10m': [10.2], 'boll_10l': [8.6], 'boll_10_width': [31.37],
+            'boll_20u': [11.5], 'boll_20m': [10.0], 'boll_20l': [8.5], 'boll_20_width': [30.0],
+        })
+        self.db.save_daily_data(df, code, 'TestFetcher')
+
+    def _insert_partial_boll(self, code: str = '600519', missing_periods: list = None):
+        """Insert a row with only SOME BOLL periods populated."""
+        import pandas as pd
+        from datetime import date
+        today = date.today()
+        col_data = {
+            'date': [today],
+            'open': [10.0], 'high': [11.0], 'low': [9.5], 'close': [10.5],
+            'volume': [1000], 'amount': [10500], 'pct_chg': [1.0],
+            'ma5': [10.5], 'ma10': [10.2], 'ma20': [10.0], 'volume_ratio': [1.0],
+        }
+        if missing_periods is None:
+            missing_periods = ['10', '20']
+        all_periods = {'5': (12.0, 10.5, 9.0, 28.57),
+                       '10': (11.8, 10.2, 8.6, 31.37),
+                       '20': (11.5, 10.0, 8.5, 30.0)}
+        for p, (u, m, l, w) in all_periods.items():
+            if p not in missing_periods:
+                col_data[f'boll_{p}u'] = [u]
+                col_data[f'boll_{p}m'] = [m]
+                col_data[f'boll_{p}l'] = [l]
+                col_data[f'boll_{p}_width'] = [w]
+        df = pd.DataFrame(col_data)
+        self.db.save_daily_data(df, code, 'TestFetcher')
+
+    def _insert_no_boll(self, code: str = '600519'):
+        """Insert a row WITHOUT any BOLL columns."""
+        import pandas as pd
+        from datetime import date
+        today = date.today()
+        df = pd.DataFrame({
+            'date': [today],
+            'open': [10.0], 'high': [11.0], 'low': [9.5], 'close': [10.5],
+            'volume': [1000], 'amount': [10500], 'pct_chg': [1.0],
+            'ma5': [10.5], 'ma10': [10.2], 'ma20': [10.0], 'volume_ratio': [1.0],
+        })
+        self.db.save_daily_data(df, code, 'TestFetcher')
+
+    def test_all_periods_populated_returns_true(self):
+        """When ALL BOLL_PERIODS columns are non-null, has_boll_data should return True."""
+        from datetime import date
+        self._insert_all_boll()
+        result = self.db.has_boll_data('600519', date.today(), boll_periods='5,10,20')
+        assert result is True, "Expected True when all periods have data"
+
+    def test_partial_periods_returns_false(self):
+        """When only some BOLL periods are populated, has_boll_data should return False."""
+        from datetime import date
+        self._insert_partial_boll(missing_periods=['10', '20'])
+        result = self.db.has_boll_data('600519', date.today(), boll_periods='5,10,20')
+        assert result is False, "Expected False when only period 5 has data but 10 and 20 are NULL"
+
+    def test_partial_periods_subset_config_returns_true(self):
+        """When BOLL_PERIODS=10 and only boll_10* is populated, has_boll_data returns True."""
+        from datetime import date
+        self._insert_partial_boll(missing_periods=['5', '20'])
+        result = self.db.has_boll_data('600519', date.today(), boll_periods='10')
+        assert result is True, "Expected True when config only asks for period 10 and it has data"
+
+    def test_no_boll_data_returns_false(self):
+        """When no BOLL columns exist, has_boll_data should return False."""
+        from datetime import date
+        self._insert_no_boll()
+        result = self.db.has_boll_data('600519', date.today(), boll_periods='5,10,20')
+        assert result is False, "Expected False when no BOLL data exists"
+
+    def test_different_stock_no_data(self):
+        """has_boll_data should return False for a stock code with no data."""
+        from datetime import date
+        self._insert_all_boll(code='600519')
+        result = self.db.has_boll_data('000001', date.today(), boll_periods='5,10,20')
+        assert result is False, "Expected False for a stock that has no data"
 
 
 # ============================================================
