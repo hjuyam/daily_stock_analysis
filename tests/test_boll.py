@@ -237,26 +237,14 @@ class TestBollBackfill:
     def _setup_db(self):
         """Create a clean isolated SQLite DB before each test."""
         import tempfile, os
-        from src.storage import DatabaseManager, get_db
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-        from src.storage import Base
+        from src.storage import DatabaseManager
 
         self._tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
         self._db_path = self._tmp.name
         self._tmp.close()
 
         DatabaseManager.reset_instance()
-        self.db = get_db()
-        self.db._db_url = f'sqlite:///{self._db_path}'
-        self.db._engine = create_engine(self.db._db_url, echo=False)
-        self.db._is_sqlite_engine = True
-        self.db._SessionLocal = sessionmaker(
-            bind=self.db._engine,
-            autoflush=False,
-        )
-        Base.metadata.create_all(self.db._engine)
-        self.db._initialized = True
+        self.db = DatabaseManager(db_url=f'sqlite:///{self._db_path}')
 
         yield
 
@@ -368,29 +356,14 @@ class TestBollDisabledUpsertRegression:
     def _setup_db(self):
         """Create a clean isolated SQLite DB before each test."""
         import tempfile, os
-        from src.storage import DatabaseManager, get_db
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-        from src.storage import Base
+        from src.storage import DatabaseManager
 
         self._tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
         self._db_path = self._tmp.name
         self._tmp.close()
 
-        # Reset singleton and create a new instance pointing to temp DB
         DatabaseManager.reset_instance()
-        self.db = get_db()
-        # Point engine to temp DB
-        self.db._db_url = f'sqlite:///{self._db_path}'
-        self.db._engine = create_engine(self.db._db_url, echo=False)
-        self.db._is_sqlite_engine = True
-        # Rebuild session factory bound to the new engine
-        self.db._SessionLocal = sessionmaker(
-            bind=self.db._engine,
-            autoflush=False,
-        )
-        Base.metadata.create_all(self.db._engine)
-        self.db._initialized = True
+        self.db = DatabaseManager(db_url=f'sqlite:///{self._db_path}')
 
         yield
 
@@ -530,35 +503,21 @@ class TestBollDisabledUpsertRegression:
 # ============================================================
 
 class TestBollSubsetUpsert:
-    """Test that save_daily_data handles BOLL_PERIODS subset correctly.
-    BOLL_PERIODS=10 should only write boll_10* columns, not touch others."""
+    """Test that save_daily_data handles BOLL_PERIODS subset correctly."""
 
     @pytest.fixture(autouse=True)
     def _setup_db(self):
         """Create a clean isolated SQLite DB before each test."""
         import tempfile, os
-        from src.storage import DatabaseManager, get_db
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-        from src.storage import Base
+        from src.storage import DatabaseManager
 
         self._tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
         self._db_path = self._tmp.name
         self._tmp.close()
 
-        # Reset singleton and create a new instance pointing to temp DB
         DatabaseManager.reset_instance()
-        self.db = get_db()
-        # Point engine to temp DB
-        self.db._db_url = f'sqlite:///{self._db_path}'
-        self.db._engine = create_engine(self.db._db_url, echo=False)
-        self.db._is_sqlite_engine = True
-        # Rebuild session factory bound to the new engine
-        self.db._SessionLocal = sessionmaker(
-            bind=self.db._engine,
-            autoflush=False,
-        )
-        Base.metadata.create_all(self.db._engine)
+        self.db = DatabaseManager(db_url=f'sqlite:///{self._db_path}')
+
         yield
         DatabaseManager.reset_instance()
         try:

@@ -1726,8 +1726,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         if not periods:
             return False
 
-        # 检查所有配置周期列是否都有数据（不再只检查第一个周期）
-        period_col_names = [f'boll_{p}u' for p in periods]
+        # 每个周期检查全部 4 列：上轨(u)、中轨(m)、下轨(l)、带宽(_width)
+        # 仅查 u 列会导致同一周期 m/l/_width 为空时被误判为已填充
+        boll_column_suffixes = ['u', 'm', 'l', '_width']
+        period_col_names = [f'boll_{p}{suffix}' for p in periods for suffix in boll_column_suffixes]
         period_cols = []
         for col_name in period_col_names:
             col = getattr(StockDaily, col_name, None)
