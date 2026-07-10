@@ -19,6 +19,11 @@ deterministic_checks() {
   echo "==> backend-gate: local deterministic checks"
   ./scripts/test.sh code
   ./scripts/test.sh yfinance
+  # BOLL 门禁脚本 — 确定性检查，非 LLM 评估
+  echo "==> backend-gate: BOLL gate scripts"
+  python .github/scripts/gate_boll_column_integrity.py
+  python .github/scripts/gate_test_isolation.py
+  python .github/scripts/gate_stale_boll.py
 }
 
 offline_test_suite() {

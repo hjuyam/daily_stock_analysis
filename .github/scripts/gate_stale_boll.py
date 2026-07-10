@@ -2,119 +2,104 @@
 """
 Gate C: 验证 save_daily_data() 在 OHLC 更新时正确处理陈旧 BOLL
 
-检查条件：
-- 当 _df_has_boll 为 False 时，所有写入路径必须将存量 BOLL 列置 NULL
-- 否则 OHLC 更新但无新 BOLL → 陈旧 BOLL 保留 → has_boll_data() 误判为可用
+核心契约：每次 upsert/update 后，DB 中的 BOLL 列状态必须精确等于
+"在 _boll_columns 中的用新值，不在的置 NULL" —— 即遍历 _ALL_BOLL_COLUMNS
+逐一决策，而非条件性跳过。
 
-检查的写入路径：
-1. SQLite upsert (_update_set): _df_has_boll=False → _ALL_BOLL_COLUMNS 置 None
-2. 非 SQLite ORM update: _df_has_boll=False → 所有现有 BOLL 列 setattr None
-3. row_dict 构建（新记录）：无需处理（新记录无存量旧数据）
+覆盖场景：
+1. _df_has_boll=False → 全部 12 列置 NULL
+2. _df_has_boll=True 但子集（如仅 10）→ 更新 10，NULL 化 5/20
+3. _df_has_boll=True 全量 → 更新全部 12 列
 """
 import ast
-import re
 import sys
 
 STORAGE_PATH = "src/storage.py"
 
 
-def _find_boll_if_blocks(tree: ast.Module) -> list[dict]:
-    """在 save_daily_data 函数中查找所有 _df_has_boll 条件分支。"""
-    results = []
-    
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "save_daily_data":
-            for child in ast.walk(node):
-                if isinstance(child, ast.If):
-                    # 检查条件是否包含 _df_has_boll
-                    source = ast.unparse(child.test) if hasattr(ast, 'unparse') else ''
-                    if '_df_has_boll' in source:
-                        has_else = child.orelse and len(child.orelse) > 0
-                        results.append({
-                            'lineno': child.lineno,
-                            'condition': source,
-                            'has_else': has_else,
-                            'else_lineno': child.orelse[0].lineno if has_else else None,
-                            'body_lines': [n.lineno for n in child.body],
-                        })
-            break  # only scan save_daily_data
-    
-    return results
-
-
-def check_stale_boll_handling() -> bool:
+def check_save_daily_data() -> bool:
     with open(STORAGE_PATH, encoding="utf-8") as f:
         source = f.read()
-    
+
     tree = ast.parse(source)
-    blocks = _find_boll_if_blocks(tree)
-    
-    if not blocks:
-        print(f"❌ GATE-C: 在 save_daily_data 中未找到 _df_has_boll 条件分支")
-        return False
-    
-    # 分类分支
-    # 1. row_dict 构建（line ~2594）—— 新记录，无需处理
-    # 2. SQLite upsert _update_set（line ~2662）—— 必须有 else
-    # 3. 非 SQLite ORM update（line ~2706）—— 必须有 else
-    
     issues = []
-    for b in blocks:
-        line = b['lineno']
-        cond = b['condition']
-        
-        # 判断这是哪个路径
-        is_row_dict = 'row_dict' in source[line:line+100] if line < len(source.split('\n')) else False
-        is_update_set = 'update_set' in b['condition'] or 'set_' in source[:source.find('\n', source.find('\n', line)+100)]
-        
-        # 更可靠的判断：检查 body 中是否有 getattr(excluded, col) 或 setattr
-        body_src = '\n'.join([source.split('\n')[l-1] for l in b['body_lines'] if l-1 < len(source.split('\n'))])
-        
-        is_excluded = 'getattr(excluded' in body_src or 'getattr(existing' in body_src
-        
-        if not b['has_else']:
-            # 没有 else 分支 —— 仅在 row_dict 路径中可接受
-            if is_excluded:
-                # upsert/update 路径缺少 else → 风险！
-                issues.append(
-                    f"  line {line}: '{cond}' 缺少 else 分支 → "
-                    f"OHLC 更新时陈旧 BOLL 不会被清空"
-                )
-    
+    passes = 0
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "save_daily_data":
+            # 检查两个写入路径
+            # 路径 1: SQLite upsert — 寻找 for col in _ALL_BOLL_COLUMNS: _update_set[col] = ...
+            # 路径 2: ORM update — 寻找 for col in _ALL_BOLL_COLUMNS: setattr(existing, col, ...)
+            
+            for child in ast.walk(node):
+                if isinstance(child, ast.For):
+                    iter_name = _get_iter_source(child.iter)
+                    if '_ALL_BOLL_COLUMNS' in iter_name:
+                        body = child.body
+                        # 检查 body 中是否有条件赋值 (if col in _boll_columns else None)
+                        has_conditional = _check_conditional_assignment(body)
+                        if has_conditional:
+                            passes += 1
+                        else:
+                            issues.append(
+                                f"  line {child.lineno}: 遍历 _ALL_BOLL_COLUMNS 但未使用条件赋值"
+                            )
+
+            # 检查是否还存在旧的 if _df_has_boll and _boll_columns: 模式
+            for child in ast.walk(node):
+                if isinstance(child, ast.If):
+                    cond = ast.unparse(child.test)
+                    if '_df_has_boll' in cond and '_boll_columns' in cond:
+                        # 检查 if 体内是否直接更新 _update_set / setattr
+                        body_source = '\n'.join([
+                            ast.unparse(stmt) for stmt in child.body[:3]
+                        ])
+                        if 'update_set.update' in body_source or 'setattr' in body_source:
+                            issues.append(
+                                f"  line {child.lineno}: 存在旧的条件性 BOLL 更新模式 "
+                                f"(if {cond[:50]}...) — 应替换为统一的 _ALL_BOLL_COLUMNS 遍历"
+                            )
+            break
+
     if issues:
         print("❌ GATE-C: save_daily_data() 陈旧 BOLL 处理不完整:")
         for i in issues:
             print(i)
         print()
-        print("期望: 每个写入路径的 _df_has_boll 条件分支必须有 else 分支 NULL 化 _ALL_BOLL_COLUMNS")
+        print("期望: 两个写入路径均遍历 _ALL_BOLL_COLUMNS，用条件赋值 'val if col in _boll_columns else None'")
         return False
-    
-    # 确认 else 分支确实 NULL 了 _ALL_BOLL_COLUMNS
-    for b in blocks:
-        if b['has_else'] and b['else_lineno']:
-            # 读取 else 分支的前几行
-            lines = source.split('\n')
-            else_lines = lines[b['else_lineno']-1:b['else_lineno']+5]
-            else_text = '\n'.join(else_lines)
-            if '_ALL_BOLL_COLUMNS' not in else_text and 'None' not in else_text:
-                issues.append(
-                    f"  line {b['linode']}: else 分支存在但未 NULL 化 BOLL 列"
-                )
-    
-    if issues:
-        print("❌ GATE-C: else 分支内容不正确:")
-        for i in issues:
-            print(i)
+
+    if passes >= 2:
+        print(f"✅ GATE-C: save_daily_data() 陈旧 BOLL 处理正确 ({passes} 个路径遍历 _ALL_BOLL_COLUMNS)")
+        return True
+    else:
+        print(f"❌ GATE-C: 只找到 {passes}/2 个 _ALL_BOLL_COLUMNS 遍历路径")
         return False
-    
-    # 统计找到了多少个完整路径
-    upsert_paths = [b for b in blocks if b['has_else']]
-    print(f"✅ GATE-C: save_daily_data() 陈旧 BOLL 处理完整 ({len(upsert_paths)} 个写入路径含 else NULL 化)")
-    for b in upsert_paths:
-        print(f"   行 {b['lineno']}: {b['condition'][:60]}... → else 分支 @行 {b['else_lineno']}")
-    return True
+
+
+def _get_iter_source(node) -> str:
+    """获取 for 循环迭代源的名称。"""
+    try:
+        return ast.unparse(node)
+    except Exception:
+        return ''
+
+
+def _check_conditional_assignment(body: list) -> bool:
+    """检查 body 中是否有 if col in _boll_columns else None 模式。"""
+    for stmt in body:
+        text = ast.unparse(stmt) if hasattr(ast, 'unparse') else ''
+        if 'in _boll_columns' in text and 'None' in text:
+            return True
+        # 也检查 comprehension 或更深层的条件
+        for child_node in ast.walk(stmt):
+            if isinstance(child_node, ast.IfExp):
+                text2 = ast.unparse(child_node) if hasattr(ast, 'unparse') else ''
+                if 'in _boll_columns' in text2:
+                    return True
+    return False
 
 
 if __name__ == "__main__":
-    ok = check_stale_boll_handling()
+    ok = check_save_daily_data()
     sys.exit(0 if ok else 1)

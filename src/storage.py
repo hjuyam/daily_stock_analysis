@@ -2656,19 +2656,12 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                         'data_source': excluded.data_source,
                         'updated_at': excluded.updated_at,
                     }
-                    # 仅在 DataFrame 包含 BOLL 列时更新 BOLL 字段
-                    # 避免 BOLL_ENABLED=false 时 upsert 清空已有 BOLL 数据
-                    # 按配置周期动态写入，只写当前配置涉及的列
-                    if _df_has_boll and _boll_columns:
-                        _update_set.update({
-                            col: getattr(excluded, col)
-                            for col in _boll_columns
-                        })
-                    else:
-                        # OHLC 已更新但无新 BOLL → 陈旧 BOLL 与当前 OHLC 不一致
-                        # 置 NULL 以确保下次 has_boll_data() 返回 False → 触发重新计算
-                        for col in _ALL_BOLL_COLUMNS:
-                            _update_set[col] = None
+                    # 统一处理 BOLL 列：在 `_boll_columns` 中的用新值，不在的置 NULL
+                    # 覆盖两种场景：
+                    # - _df_has_boll=True 但子集（如仅 10）：更新 10，NULL 化 5/20
+                    # - _df_has_boll=False：全部 12 列置 NULL
+                    for col in _ALL_BOLL_COLUMNS:
+                        _update_set[col] = getattr(excluded, col) if col in _boll_columns else None
                     session.execute(
                         stmt.on_conflict_do_update(
                             index_elements=['code', 'date'],
@@ -2706,13 +2699,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     existing.ma10 = record['ma10']
                     existing.ma20 = record['ma20']
                     existing.volume_ratio = record['volume_ratio']
-                    if _df_has_boll and _boll_columns:
-                        for col in _boll_columns:
-                            setattr(existing, col, record[col])
-                    else:
-                        # OHLC 已更新但无新 BOLL → 陈旧 BOLL 与当前 OHLC 不一致
-                        for col in _ALL_BOLL_COLUMNS:
-                            setattr(existing, col, None)
+                    # 统一处理 BOLL 列：在 `_boll_columns` 中的用新值，不在的置 NULL
+                    # 覆盖子集+全缺两种场景
+                    for col in _ALL_BOLL_COLUMNS:
+                        setattr(existing, col, record[col] if col in _boll_columns else None)
                     existing.data_source = record['data_source']
                     existing.updated_at = record['updated_at']
                 return new_count

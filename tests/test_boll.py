@@ -584,11 +584,9 @@ class TestBollSubsetUpsert:
         })
         return df
 
-    def test_subset_save_preserves_existing_full_boll_data(self):
-        """
-        After saving with full BOLL (period 5/10/20), saving with subset
-        (period 10 only) should NOT wipe period 5 or 20 data.
-        """
+    def test_subset_save_nulls_non_configured_periods(self):
+        """Saving with subset (BOLL_PERIODS=10) should update period 10 and
+        NULL period 5/20 columns (stale data from previous OHLC)."""
         from datetime import date, timedelta
         from src.storage import StockDaily
         from sqlalchemy import select
@@ -616,7 +614,7 @@ class TestBollSubsetUpsert:
         df_subset = self._make_df_boll_period_10_only()
         self.db.save_daily_data(df_subset, '600001', 'TestFetcher')
 
-        # Verify period 5 and 20 data are still intact (NOT wiped)
+        # Verify period 5 and 20 were NULLed (stale after OHLC update without their data)
         with self.db.get_session() as session:
             row = session.execute(
                 select(StockDaily).where(
@@ -625,16 +623,16 @@ class TestBollSubsetUpsert:
                 )
             ).scalar_one_or_none()
             assert row is not None
-            # Period 5 should still have its original values
-            assert row.boll_5u is not None, \
-                "boll_5u was wiped! Subset save should NOT overwrite non-configured period columns"
-            assert row.boll_5m is not None
-            assert row.boll_5l is not None
-            # Period 20 should still have its original values
-            assert row.boll_20u is not None, \
-                "boll_20u was wiped! Subset save should NOT overwrite non-configured period columns"
-            assert row.boll_20m is not None
-            assert row.boll_20l is not None
+            # Period 5 should be NULLed (stale — not refreshed by this batch)
+            assert row.boll_5u is None, \
+                "boll_5u should be NULL after subset save (stale data, not refreshed)"
+            assert row.boll_5m is None
+            assert row.boll_5l is None
+            # Period 20 should be NULLed (same reason)
+            assert row.boll_20u is None, \
+                "boll_20u should be NULL after subset save (stale data, not refreshed)"
+            assert row.boll_20m is None
+            assert row.boll_20l is None
             # Period 10 should have been updated to new values
             assert row.boll_10u == 13.8, \
                 f"boll_10u should be updated to 13.8, got {row.boll_10u}"
