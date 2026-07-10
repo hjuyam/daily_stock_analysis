@@ -456,7 +456,7 @@ class TestBollDisabledUpsertRegression:
         df_without = self._make_df_without_boll()
         inserted = self.db.save_daily_data(df_without, '600519', 'TestFetcher')
 
-        # Step 3: Verify BOLL data is STILL intact
+        # Step 3: Verify BOLL data was NULLED (OHLC updated without fresh BOLL → stale)
         with self.db.get_session() as session:
             for row_date in [today - timedelta(days=i) for i in range(3, -1, -1)]:
                 row = session.execute(
@@ -466,11 +466,11 @@ class TestBollDisabledUpsertRegression:
                     )
                 ).scalar_one_or_none()
                 assert row is not None, f"Row for {row_date} not found"
-                assert row.boll_5u is not None, \
-                    f"boll_5u for {row_date} was wiped! BOLL data lost after disabled upsert"
-                assert row.boll_5m is not None
-                assert row.boll_5l is not None
-                assert row.boll_20_width is not None
+                assert row.boll_5u is None, \
+                    f"boll_5u for {row_date} should be NULL (stale BOLL after OHLC update without fresh BOLL)"
+                assert row.boll_5m is None
+                assert row.boll_5l is None
+                assert row.boll_20_width is None
                 # Verify non-BOLL fields WERE updated by the second save
                 assert row.close == 11.0 or row.close == 12.0 or row.close == 13.0 or row.close == 12.2
 

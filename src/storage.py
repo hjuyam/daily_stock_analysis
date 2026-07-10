@@ -2537,6 +2537,12 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             logger.warning(f"保存数据为空，跳过 {code}")
             return 0
 
+        # 所有已知 BOLL 列名（用于在 OHLC 更新时清空陈旧 BOLL）
+        _ALL_BOLL_COLUMNS = [
+            'boll_5u', 'boll_5m', 'boll_5l', 'boll_5_width',
+            'boll_10u', 'boll_10m', 'boll_10l', 'boll_10_width',
+            'boll_20u', 'boll_20m', 'boll_20l', 'boll_20_width',
+        ]
         now = datetime.now()
         records_by_date: Dict[date, Dict[str, Any]] = {}
         # 检测 DataFrame 是否包含 BOLL 列（按配置周期动态检测，不硬编码 boll_5u）
@@ -2658,6 +2664,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                             col: getattr(excluded, col)
                             for col in _boll_columns
                         })
+                    else:
+                        # OHLC 已更新但无新 BOLL → 陈旧 BOLL 与当前 OHLC 不一致
+                        # 置 NULL 以确保下次 has_boll_data() 返回 False → 触发重新计算
+                        for col in _ALL_BOLL_COLUMNS:
+                            _update_set[col] = None
                     session.execute(
                         stmt.on_conflict_do_update(
                             index_elements=['code', 'date'],
@@ -2698,6 +2709,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     if _df_has_boll and _boll_columns:
                         for col in _boll_columns:
                             setattr(existing, col, record[col])
+                    else:
+                        # OHLC 已更新但无新 BOLL → 陈旧 BOLL 与当前 OHLC 不一致
+                        for col in _ALL_BOLL_COLUMNS:
+                            setattr(existing, col, None)
                     existing.data_source = record['data_source']
                     existing.updated_at = record['updated_at']
                 return new_count
