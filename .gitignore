@@ -3,9 +3,6 @@
 .env.*
 *.env
 *.env.local
-
-# Hermes agent working files
-.hermes/
 .env.*.local
 
 # 测试文件（可能包含敏感配置）
@@ -76,9 +73,6 @@ Thumbs.db
 htmlcov/
 
 local/
-
-# 本地开发/测试脚本（非版本控制）
-scripts/dsa_single.py
 
 run.sh
 

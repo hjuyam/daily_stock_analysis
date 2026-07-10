@@ -1431,17 +1431,35 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         with locked retry (matching _ensure_llm_usage_telemetry_columns pattern)."""
         if not self._is_sqlite_engine:
             return
-        try:
-            existing = {
-                column["name"]
-                for column in inspect(self._engine).get_columns(StockDaily.__tablename__)
-            }
-        except Exception as exc:
-            logger.warning(
-                "[BOLL] failed to inspect stock_daily columns; skipping backfill: %s",
-                exc,
-            )
-            return
+        max_retries = self._sqlite_write_retry_max
+        for attempt in range(max_retries + 1):
+            try:
+                existing = {
+                    column["name"]
+                    for column in inspect(self._engine).get_columns(StockDaily.__tablename__)
+                }
+                break
+            except Exception as exc:
+                if attempt < max_retries:
+                    delay = self._sqlite_write_retry_base_delay * (2 ** attempt)
+                    logger.warning(
+                        "[BOLL] failed to inspect stock_daily columns, "
+                        "retrying: %s (%s/%s, %.2fs)",
+                        exc,
+                        attempt + 1,
+                        max_retries,
+                        delay,
+                    )
+                    if delay > 0:
+                        time.sleep(delay)
+                    continue
+                logger.error(
+                    "[BOLL] failed to inspect stock_daily columns "
+                    "after %s retries; aborting init: %s",
+                    max_retries,
+                    exc,
+                )
+                raise
 
         max_retries = self._sqlite_write_retry_max
         for column, column_type in _BOLL_COLUMNS_SQL.items():
@@ -1737,19 +1755,26 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 return False
             period_cols.append(col)
 
-        with self.get_session() as session:
-            row = session.execute(
-                select(*period_cols).where(
-                    and_(
-                        StockDaily.code == code,
-                        StockDaily.date == target_date
+        try:
+            with self.get_session() as session:
+                row = session.execute(
+                    select(*period_cols).where(
+                        and_(
+                            StockDaily.code == code,
+                            StockDaily.date == target_date
+                        )
                     )
-                )
-            ).one_or_none()
-            if row is None:
-                return False
-            # 所有配置周期列都必须非空
-            return all(val is not None for val in row)
+                ).one_or_none()
+                if row is None:
+                    return False
+                # 所有配置周期列都必须非空
+                return all(val is not None for val in row)
+        except Exception as exc:
+            logger.warning(
+                "[BOLL] has_boll_data query failed for %s %s: %s",
+                code, target_date, exc,
+            )
+            return False
 
     def get_latest_data(
         self,
@@ -2595,7 +2620,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 'updated_at': now,
             }
             # 布林带（Bollinger Bands）- 仅在 DataFrame 包含相应列时写入
-            # 避免 BOLL_ENABLED=false 时 upsert 清空已有 BOLL 数据
+            # 不在 _boll_columns 中的 BOLL 列会在 upsert/update 时统一置 NULL
+            # （陈旧派生数据不能保留，详见 _ALL_BOLL_COLUMNS 遍历路径）
             # 按配置周期动态写入，只写当前配置涉及的列（不硬编码 5/10/20 全量）
             if _df_has_boll and _boll_columns:
                 row_dict.update({

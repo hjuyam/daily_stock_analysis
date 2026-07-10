@@ -1,160 +1,112 @@
 #!/usr/bin/env python3
 """
-Gate A: 验证 has_boll_data() 检查每个周期的全部 4 列 (u, m, l, _width)
+Gate A: 运行时验证 has_boll_data() 检查每个周期的全部 4 列 (u, m, l, _width)
 
-通过 AST 解析 has_boll_data 函数体，确认 period_col_names 的列表推导式
-生成了所有 4 个后缀（u, m, l, _width），而不仅是 u。
+通过创建临时 SQLite 数据库，实际调用 has_boll_data 验证：
+- 全部 4 列存在 → True
+- 缺少任一列 → False
+- 无数据 → False
 """
-import ast
 import sys
-
-STORAGE_PATH = "src/storage.py"
-
-
-def _find_suffix_variable(source: str, tree: ast.Module, func_node: ast.FunctionDef) -> set | None:
-    """
-    在 has_boll_data 函数作用域内，寻找周期后缀变量（如 boll_column_suffixes）
-    并返回其字面值集合。
-    """
-    for node in ast.walk(func_node):
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    var_name = target.id
-                    # 找后缀列表变量: 名字包含 suffix/col/Suffix 且值是列表字面量
-                    if any(kw in var_name.lower() for kw in ["suffix", "col", "boll"]):
-                        if isinstance(node.value, ast.List):
-                            values = set()
-                            for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant):
-                                    values.add(str(elt.value))
-                            if values:
-                                return values
-    return None
+import tempfile
+import os
+from datetime import date, timedelta
 
 
-def _extract_period_suffixes_from_listcomp(comp: ast.ListComp) -> set:
-    """从列表推导式语法树中提取用于生成列名的后缀变量名。"""
-    generators = comp.generators
-    if len(generators) < 2:
-        return set()  # 只有一层 for = 只查一种列
+def check_by_runtime() -> bool:
+    # 确保能从项目根目录导入
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _project_root = os.path.dirname(os.path.dirname(_script_dir))
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
 
-    # 第二层 for 的迭代变量就是后缀来源
-    second_gen = generators[1]
-    if isinstance(second_gen.iter, ast.Name):
-        return {second_gen.iter.id}  # 变量名，需在上下文中解析
-    elif isinstance(second_gen.iter, ast.List):
-        return {str(elt.value) for elt in second_gen.iter.elts if isinstance(elt, ast.Constant)}
-    return set()
+    from src.storage import DatabaseManager, StockDaily
+    from sqlalchemy import select
 
+    # 创建临时数据库
+    tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+    db_path = tmp.name
+    tmp.close()
 
-def check_column_completeness() -> bool:
-    with open(STORAGE_PATH, encoding="utf-8") as f:
-        source = f.read()
-
-    tree = ast.parse(source)
-    func_node = None
-    period_col_comp = None
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "has_boll_data":
-            func_node = node
-            for child in ast.walk(node):
-                if isinstance(child, ast.Assign):
-                    for target in child.targets:
-                        if isinstance(target, ast.Name) and target.id == "period_col_names":
-                            if isinstance(child.value, ast.ListComp):
-                                period_col_comp = child.value
-                            elif isinstance(child.value, ast.List):
-                                # 硬编码列表，直接提取
-                                period_col_comp = child.value
-
-    if func_node is None:
-        print(f"❌ GATE-A: 未找到 has_boll_data 函数")
-        return False
-
-    if period_col_comp is None:
-        print(f"❌ GATE-A: 未找到 period_col_names 定义")
-        return False
-
-    if isinstance(period_col_comp, ast.List):
-        # 硬编码列表模式
-        values = []
-        for elt in period_col_comp.elts:
-            if isinstance(elt, ast.Constant):
-                values.append(str(elt.value))
-            elif isinstance(elt, ast.JoinedStr):
-                # f-string
-                values.append("f-string")
-        print(f"⚠️ GATE-A: period_col_names 是硬编码列表 ({len(values)} 项), 手动确认")
-        return True
-
-    # ListComp 模式
-    comp = period_col_comp
-    generators = comp.generators
-
-    if len(generators) < 2:
-        print(f"❌ GATE-A: 列表推导式只有 {len(generators)} 层，应为 2 层 (periods × suffixes)")
-        return False
-
-    # 从函数作用域查找后缀变量
-    suffix_var = _find_suffix_variable(source, tree, func_node)
-
-    if suffix_var:
-        expected = {"u", "m", "l", "_width"}
-        missing = expected - suffix_var
-        if missing:
-            print(f"❌ GATE-A: has_boll_data() 周期后缀缺少: {', '.join(sorted(missing))}")
-            print(f"   当前后缀: {sorted(suffix_var)}")
-            print(f"   期望后缀: {sorted(expected)}")
-            return False
-        print(f"✅ GATE-A: has_boll_data() 覆盖 4 列后缀: {', '.join(sorted(suffix_var))}")
-    else:
-        # 尝试从列表推导式的第二层提取
-        second_gen = generators[1]
-        if isinstance(second_gen.iter, ast.List):
-            suffixes = {str(elt.value) for elt in second_gen.iter.elts if isinstance(elt, ast.Constant)}
-            if suffixes:
-                expected = {"u", "m", "l", "_width"}
-                missing = expected - suffixes
-                if missing:
-                    print(f"❌ GATE-A: 缺少后缀: {', '.join(sorted(missing))}")
-                    return False
-                print(f"✅ GATE-A: has_boll_data() 覆盖 4 列后缀: {', '.join(sorted(suffixes))}")
-            else:
-                print(f"⚠️ GATE-A: 无法解析后缀来源（动态变量），执行运行时验证")
-                return _runtime_check()
-        else:
-            print(f"⚠️ GATE-A: 后缀来自变量 {second_gen.iter.id}，执行运行时验证")
-            return _runtime_check()
-
-    # 确认有两个 for 层 (periods × suffixes)
-    print(f"  列表推导式: {len(generators)} 层 for")
-    return True
-
-
-def _runtime_check() -> bool:
-    """运行时导入 DatabaseManager，直接调用 has_boll_data 的私有变体验证。"""
     try:
-        import sys as _sys
-        _sys.path.insert(0, ".")
-        from src.storage import StockDaily
-        # 检查 StockDaily 上是否定义了所有 12 个 BOLL 列
-        expected_cols = []
-        for p in [5, 10, 20]:
-            for suffix in ['u', 'm', 'l', '_width']:
-                expected_cols.append(f'boll_{p}{suffix}')
-        missing = [c for c in expected_cols if not hasattr(StockDaily, c)]
-        if missing:
-            print(f"❌ GATE-A: StockDaily 缺少列: {missing}")
-            return False
-        print(f"✅ GATE-A: StockDaily 定义了全部 {len(expected_cols)} 个 BOLL 列")
+        DatabaseManager.reset_instance()
+        db = DatabaseManager(db_url=f'sqlite:///{db_path}')
+
+        # 插入一行测试数据：所有 BOLL 列非空
+        today = date.today()
+        with db.get_session() as session:
+            row = StockDaily(
+                code='999999',
+                date=today,
+                open=10.0, high=11.0, low=9.5, close=10.5,
+                volume=1000, amount=10500, pct_chg=0.5,
+                ma5=10.5, ma10=10.2, ma20=10.0, volume_ratio=1.0,
+                data_source='Test',
+                boll_5u=12.0, boll_5m=10.5, boll_5l=9.0, boll_5_width=28.57,
+                boll_10u=11.8, boll_10m=10.2, boll_10l=8.6, boll_10_width=31.37,
+                boll_20u=11.5, boll_20m=10.0, boll_20l=8.5, boll_20_width=30.00,
+            )
+            session.add(row)
+            session.commit()
+
+        # 验证 1: 全量列非空 → True
+        assert db.has_boll_data('999999', today) is True, \
+            "所有 12 列非空应返回 True"
+        print("  ✅ 全量列非空 → True")
+
+        # 验证 2: 同一周期缺部分列 → False
+        # 手动将 boll_5_width 置 NULL
+        with db.get_session() as session:
+            r = session.execute(
+                select(StockDaily).where(
+                    StockDaily.code == '999999',
+                    StockDaily.date == today,
+                )
+            ).scalar_one()
+            r.boll_5_width = None
+            session.commit()
+        assert db.has_boll_data('999999', today) is False, \
+            "boll_5_width 为 NULL 应返回 False"
+        print("  ✅ 同周期缺少 1 列 → False")
+
+        # 验证 3: 无数据 → False
+        assert db.has_boll_data('000000', today) is False, \
+            "无数据应返回 False"
+        print("  ✅ 无数据 → False")
+
+        # 验证 4: 子集周期检查（BOLL_PERIODS=10）
+        # 恢复 boll_5_width
+        with db.get_session() as session:
+            r = session.execute(
+                select(StockDaily).where(
+                    StockDaily.code == '999999',
+                    StockDaily.date == today,
+                )
+            ).scalar_one()
+            r.boll_5_width = 28.57
+            r.boll_5u = None  # 仅缺 boll_5u（但子集只查 10）
+            session.commit()
+        assert db.has_boll_data('999999', today, boll_periods='10') is True, \
+            "子集只查 10，boll_5u 为空不应影响"
+        print("  ✅ 子集检查 → True（只查配置周期）")
+
+        print("✅ GATE-A: has_boll_data() 列完整性检查通过")
         return True
+
+    except AssertionError as e:
+        print(f"❌ GATE-A: 断言失败: {e}")
+        return False
     except Exception as e:
         print(f"❌ GATE-A: 运行时验证失败: {e}")
         return False
+    finally:
+        DatabaseManager.reset_instance()
+        try:
+            os.unlink(db_path)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
-    ok = check_column_completeness()
+    ok = check_by_runtime()
     sys.exit(0 if ok else 1)

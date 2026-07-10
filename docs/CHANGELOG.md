@@ -25,8 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复 `BOLL_PERIODS` 配置层允许输入不支持周期（如 30）的问题，新增 `_validate_boll_periods` 校验，仅接受 5/10/20。
 - [修复] 修复 BOLL 关闭时 prompt JSON 示例中包含非法 `#` 注释破坏严格 JSON 契约的问题。
 - [修复] 修复历史报告重建缺失 `boll_analysis` 字段映射的问题，确保通知路径和 Web 历史路径行为一致。
-- [测试] 新增 BOLL 功能专项测试（28 用例）：周期校验、条件计算、Prompt 条件渲染、JSON 契约、历史重建、回填检测、BOLL 关闭 upsert 保护、BOLL_PERIODS 子集 upsert 回归、测试隔离。
+- [测试] 新增 BOLL 功能专项测试（32 用例）：周期校验、条件计算、Prompt 条件渲染、JSON 契约、历史重建、回填检测、BOLL 关闭 upsert 保护、BOLL_PERIODS 子集 upsert 回归、测试隔离、ALTER 旧表升级路径。
 - [修复] 修复 `save_daily_data()` 在 OHLC 更新时保留陈旧 BOLL 的问题：SQLite 和 ORM 写入路径均遍历 `_ALL_BOLL_COLUMNS`，在 `_boll_columns` 中的用新值，不在的置 NULL。覆盖全缺和子集两种场景，确保 `has_boll_data()` 准确反映 BOLL 数据与当前 OHLC 的一致性。
+- [修复] 修复 `_ensure_stock_daily_boll_columns()` 在 inspect() 失败时 fail-open 的问题：inspect() 增加重试（与 ALTER 一致），重试耗尽后改为 fail-closed（raise），不再跳过迁移。
+- [修复] 修复 `has_boll_data()` 不捕获 SQL 错误的问题：异常时返回 False 并记录 warning，避免异常穿透到用户侧。
+- [改进] 重构 Gate A/C 门禁脚本：从 AST 形式检查改为运行时行为检查，验证实际数据行为而非代码形态，消除重构误报风险。
+- [修复] 统一陈旧 BOLL 契约语义：`TestBollDisabledUpsertRegression` 类 docstring、测试名、`storage.py` 注释与实际代码行为一致（NULL 化而非保留）。
 - [改进] BOLL 默认改为开启（`BOLL_ENABLED=true`），因布林带为纯计算不依赖外部数据源，无需用户额外配置即可生效。
 - [chore] 新增 `tests/test_boll.py`。
 - [改进] Web AI 建议页新增主股票上下文，复用最近分析和股票索引候选，并改进表现统计零样本说明。

@@ -349,7 +349,7 @@ class TestBollBackfill:
 # ============================================================
 
 class TestBollDisabledUpsertRegression:
-    """Test that save_daily_data does NOT overwrite existing BOLL data
+    """Test that save_daily_data NULLs stale BOLL columns
     when the incoming DataFrame lacks BOLL columns (BOLL_ENABLED=false)."""
 
     @pytest.fixture(autouse=True)
@@ -427,8 +427,8 @@ class TestBollDisabledUpsertRegression:
         })
         return df
 
-    def test_upsert_without_boll_preserves_existing_boll_data(self):
-        """After saving with BOLL then saving without BOLL, BOLL data should persist."""
+    def test_upsert_without_boll_nullifies_existing_boll_data(self):
+        """After saving with BOLL then saving without BOLL, BOLL data should be NULLed (stale)."""
         from datetime import date, timedelta
         from src.storage import StockDaily
         from sqlalchemy import select
@@ -678,3 +678,154 @@ class TestBollSubsetUpsert:
             assert row.boll_20m is None
             assert row.boll_20l is None
             assert row.boll_20_width is None
+
+
+# ============================================================
+# Regression: ALTER upgrade path (old DB without BOLL columns)
+# ============================================================
+
+class TestBollAlterUpgrade:
+    """Test that _ensure_stock_daily_boll_columns() correctly migrates
+    an existing database without BOLL columns (real user upgrade path)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_db(self):
+        """Create a clean SQLite DB with OLD schema (no BOLL columns)."""
+        import tempfile, os
+        from sqlalchemy import create_engine, text, MetaData, Table, Column, Integer, String, Date, Float, DateTime, UniqueConstraint, Index
+        from datetime import datetime
+
+        self._tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self._db_path = self._tmp.name
+        self._tmp.close()
+
+        engine = create_engine(f'sqlite:///{self._db_path}')
+        meta = MetaData()
+        Table(
+            'stock_daily', meta,
+            Column('id', Integer, primary_key=True, autoincrement=True),
+            Column('code', String(10), nullable=False, index=True),
+            Column('date', Date, nullable=False, index=True),
+            Column('open', Float),
+            Column('high', Float),
+            Column('low', Float),
+            Column('close', Float),
+            Column('volume', Float),
+            Column('amount', Float),
+            Column('pct_chg', Float),
+            Column('ma5', Float),
+            Column('ma10', Float),
+            Column('ma20', Float),
+            Column('volume_ratio', Float),
+            Column('data_source', String(50)),
+            Column('created_at', DateTime),
+            Column('updated_at', DateTime),
+            UniqueConstraint('code', 'date', name='uix_code_date'),
+            Index('ix_code_date', 'code', 'date'),
+        )
+        meta.create_all(engine)
+
+        from datetime import date, timedelta
+        today = date.today()
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO stock_daily
+                        (code, date, open, high, low, close, volume, amount, pct_chg,
+                         ma5, ma10, ma20, volume_ratio, data_source, created_at, updated_at)
+                    VALUES
+                        ('600000', :d1, 10.0, 11.0, 9.5, 10.5, 1000, 10500, 1.0,
+                         10.5, 10.2, 10.0, 1.0, 'Test', :now, :now),
+                        ('600000', :d2, 10.5, 11.5, 10.0, 11.0, 1200, 13200, 0.5,
+                         10.8, 10.4, 10.1, 1.1, 'Test', :now, :now)
+                """),
+                {'d1': today, 'd2': today - timedelta(days=1),
+                 'now': datetime.now()},
+            )
+        engine.dispose()
+
+        from src.storage import DatabaseManager
+        DatabaseManager.reset_instance()
+        self.db = DatabaseManager(db_url=f'sqlite:///{self._db_path}')
+
+        yield
+
+        DatabaseManager.reset_instance()
+        try:
+            os.unlink(self._db_path)
+        except OSError:
+            pass
+
+    def test_alter_adds_boll_columns(self):
+        """Existing DB upgraded: ALTER should add all 12 BOLL columns."""
+        from src.storage import StockDaily
+        from sqlalchemy import inspect as sa_inspect
+
+        inspector = sa_inspect(self.db._engine)
+        columns = {col['name'] for col in inspector.get_columns(StockDaily.__tablename__)}
+        expected = {'boll_5u', 'boll_5m', 'boll_5l', 'boll_5_width',
+                    'boll_10u', 'boll_10m', 'boll_10l', 'boll_10_width',
+                    'boll_20u', 'boll_20m', 'boll_20l', 'boll_20_width'}
+        missing = expected - columns
+        assert not missing, f"BOLL columns missing after ALTER: {missing}"
+
+    def test_alter_preserves_existing_data(self):
+        """Existing rows should survive ALTER migration."""
+        from src.storage import StockDaily
+        from sqlalchemy import select
+        from datetime import date, timedelta
+
+        today = date.today()
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(StockDaily).where(StockDaily.code == '600000')
+                .order_by(StockDaily.date)
+            ).scalars().all()
+            assert len(rows) == 2, f"Expected 2 rows preserved, got {len(rows)}"
+            assert rows[0].close is not None
+            assert rows[1].close is not None
+
+    def test_alter_boll_columns_are_null_for_existing_rows(self):
+        """BOLL columns should be NULL for rows that existed before ALTER."""
+        from src.storage import StockDaily
+        from sqlalchemy import select
+        from datetime import date
+
+        today = date.today()
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(StockDaily).where(
+                    StockDaily.code == '600000',
+                    StockDaily.date == today,
+                )
+            ).scalar_one()
+            assert row.boll_5u is None, "boll_5u should be NULL for pre-ALTER rows"
+            assert row.boll_10u is None
+            assert row.boll_20u is None
+
+    def test_alter_can_save_new_data_with_boll(self):
+        """After ALTER, new data with BOLL columns should save correctly."""
+        import pandas as pd
+        from datetime import date
+
+        df = pd.DataFrame({
+            'date': [date.today()],
+            'open': [11.0], 'high': [12.0], 'low': [10.5], 'close': [11.5],
+            'volume': [1100], 'amount': [12650], 'pct_chg': [0.8],
+            'ma5': [10.8], 'ma10': [10.4], 'ma20': [10.2],
+            'volume_ratio': [1.1],
+            'boll_5u': [12.0], 'boll_5m': [10.8], 'boll_5l': [9.6], 'boll_5_width': [22.22],
+            'boll_10u': [11.8], 'boll_10m': [10.5], 'boll_10l': [9.2], 'boll_10_width': [24.76],
+            'boll_20u': [11.5], 'boll_20m': [10.2], 'boll_20l': [8.9], 'boll_20_width': [25.49],
+        })
+        self.db.save_daily_data(df, '600001', 'Test')
+        from src.storage import StockDaily
+        from sqlalchemy import select
+        with self.db.get_session() as session:
+            row = session.execute(
+                select(StockDaily).where(
+                    StockDaily.code == '600001',
+                    StockDaily.date == date.today(),
+                )
+            ).scalar_one()
+            assert row.boll_5u == 12.0, f"boll_5u should be 12.0, got {row.boll_5u}"
